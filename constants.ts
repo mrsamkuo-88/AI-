@@ -3,9 +3,9 @@ export const GEMINI_MODEL = 'gemini-flash-lite-latest';
 
 /** 
  * LINE LIFF ID 配置
- * 請在此填入從 LINE Developers Console 獲得的 LIFF ID
+ * 已更新為用戶提供的 ID: 2008738915-Gme20DzS
  */
-export const LIFF_ID = "YOUR_LIFF_ID"; 
+export const LIFF_ID: string = "2008738915-Gme20DzS"; 
 
 // 模擬真實資料庫 (CRM + LINE Mapping)
 export const MOCK_CUSTOMER_DB = [

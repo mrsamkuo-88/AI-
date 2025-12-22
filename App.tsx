@@ -17,23 +17,23 @@ interface BatchItem {
   file: File;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   result?: GeminiServiceResponse;
+  imageDataUrl?: string;
   error?: string;
 }
 
 const App: React.FC = () => {
   const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
   const [ocrHistory, setOcrHistory] = useState<OCRHistoryItem[]>([]);
+  const [customers, setCustomers] = useState<MatchedUser[]>([]);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isApiKeySelected, setIsApiKeySelected] = useState<boolean>(false);
   const [liffStatus, setLiffStatus] = useState<'loading' | 'success' | 'failed' | 'standalone'>('loading');
-  const [lineProfile, setLineProfile] = useState<{ displayName: string, pictureUrl?: string } | null>(null);
+  const [lineProfile, setLineProfile] = useState<{ displayName: string, pictureUrl?: string, userId: string } | null>(null);
   const [showDb, setShowDb] = useState<boolean>(false);
   const [showHistory, setShowHistory] = useState<boolean>(false);
-  const [showSummary, setShowSummary] = useState<boolean>(false);
-  const [totalTime, setTotalTime] = useState<number>(0);
-  const [historySortOrder, setHistorySortOrder] = useState<'desc' | 'asc'>('desc');
 
+  // 初始化 LIFF
   useEffect(() => {
     const initLiff = async () => {
       // @ts-ignore
@@ -43,8 +43,7 @@ const App: React.FC = () => {
         return;
       }
 
-      if (!LIFF_ID || LIFF_ID === "YOUR_LIFF_ID") {
-        console.warn("LIFF ID is not configured.");
+      if (!LIFF_ID || (LIFF_ID as string) === "YOUR_LIFF_ID") {
         setLiffStatus('standalone');
         return;
       }
@@ -53,10 +52,10 @@ const App: React.FC = () => {
         await liff.init({ liffId: LIFF_ID });
         if (liff.isLoggedIn()) {
           const profile = await liff.getProfile();
+          // @ts-ignore
           setLineProfile(profile);
           setLiffStatus('success');
         } else {
-          // 在 LINE 環境外自動嘗試登入，或顯示未登入狀態
           setLiffStatus('standalone');
         }
       } catch (err) {
@@ -67,16 +66,31 @@ const App: React.FC = () => {
     initLiff();
   }, []);
 
+  // 載入與儲存持久化資料
   useEffect(() => {
     const savedHistory = localStorage.getItem('ocr_mail_history');
+    const savedCustomers = localStorage.getItem('crm_customers');
+
     if (savedHistory) {
       try { setOcrHistory(JSON.parse(savedHistory)); } catch (e) { console.error(e); }
+    }
+    
+    if (savedCustomers) {
+      try { setCustomers(JSON.parse(savedCustomers)); } catch (e) { 
+        setCustomers(MOCK_CUSTOMER_DB as MatchedUser[]); 
+      }
+    } else {
+      setCustomers(MOCK_CUSTOMER_DB as MatchedUser[]);
     }
   }, []);
 
   useEffect(() => {
     localStorage.setItem('ocr_mail_history', JSON.stringify(ocrHistory));
   }, [ocrHistory]);
+
+  useEffect(() => {
+    localStorage.setItem('crm_customers', JSON.stringify(customers));
+  }, [customers]);
 
   const progressStats = useMemo(() => {
     const total = batchItems.length;
@@ -100,16 +114,71 @@ const App: React.FC = () => {
   useEffect(() => { checkApiKey(); }, [checkApiKey]);
 
   const handleFilesSelect = (files: File[]) => {
-    const newItems: BatchItem[] = files.map(file => ({ id: Math.random().toString(36).substring(7), file, status: 'pending' }));
+    const newItems: BatchItem[] = files.map(file => ({ 
+      id: Math.random().toString(36).substring(7), 
+      file, 
+      status: 'pending',
+      imageDataUrl: URL.createObjectURL(file)
+    }));
     setBatchItems(prev => [...prev, ...newItems]);
   };
 
+  // 新增功能：將當前 LIFF 用戶註冊到 CRM
+  const handleRegisterMe = () => {
+    if (!lineProfile) return;
+    const exists = customers.find(c => c.lineUserId === lineProfile.userId);
+    if (exists) {
+      alert(`您已註冊過！姓名為：${exists.name}`);
+      return;
+    }
+
+    const newCustomer: MatchedUser = {
+      lineUserId: lineProfile.userId,
+      name: lineProfile.displayName,
+      company: '新註冊客戶',
+      avatar: lineProfile.pictureUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${lineProfile.userId}`,
+      status: 'matched',
+      confidence: 1.0,
+      isLinked: true,
+      lastContact: new Date().toISOString().split('T')[0]
+    };
+
+    setCustomers(prev => [...prev, newCustomer]);
+    alert("✅ 註冊成功！您的 LINE ID 已與系統資料庫串接。");
+  };
+
+  const handleLinkUser = (userId: string) => {
+    setCustomers(prev => prev.map(c => {
+      if (c.lineUserId === userId) {
+        return { ...c, isLinked: true, lastContact: new Date().toISOString().split('T')[0] };
+      }
+      return c;
+    }));
+
+    setBatchItems(prev => prev.map(item => {
+      if (item.result?.analysis?.matchedUser?.lineUserId === userId) {
+        return {
+          ...item,
+          result: {
+            ...item.result,
+            analysis: {
+              ...item.result.analysis,
+              matchedUser: { ...item.result.analysis.matchedUser, isLinked: true, lastContact: new Date().toISOString().split('T')[0] }
+            }
+          }
+        };
+      }
+      return item;
+    }));
+  };
+
   const handleManualUpdateMatch = (itemId: string, user: MatchedUser) => {
+    const dbUser = customers.find(c => c.lineUserId === user.lineUserId) || user;
     setBatchItems(prev => prev.map(item => {
       if (item.id === itemId && item.result && item.result.analysis) {
         return {
           ...item,
-          result: { ...item.result, analysis: { ...item.result.analysis, matchedUser: user } }
+          result: { ...item.result, analysis: { ...item.result.analysis, matchedUser: dbUser } }
         };
       }
       return item;
@@ -117,13 +186,16 @@ const App: React.FC = () => {
   };
 
   const handleDeleteItem = (itemId: string) => {
-    setBatchItems(prev => prev.filter(item => item.id !== itemId));
+    setBatchItems(prev => {
+      const item = prev.find(i => i.id === itemId);
+      if (item?.imageDataUrl) URL.revokeObjectURL(item.imageDataUrl);
+      return prev.filter(i => i.id !== itemId);
+    });
   };
 
   const handleBatchProcess = async () => {
     if (batchItems.length === 0 || isProcessing) return;
     setIsProcessing(true);
-    const start = performance.now();
     const itemsToProcess = batchItems.filter(item => item.status === 'pending' || item.status === 'failed');
 
     await Promise.all(itemsToProcess.map(async (item) => {
@@ -136,6 +208,14 @@ const App: React.FC = () => {
         });
         const base64 = await base64Promise;
         const result = await processImageForMail(base64, item.file.type);
+        
+        if (result.analysis?.matchedUser) {
+          const dbMatch = customers.find(c => c.lineUserId === result.analysis!.matchedUser!.lineUserId);
+          if (dbMatch) {
+            result.analysis.matchedUser = { ...result.analysis.matchedUser, ...dbMatch };
+          }
+        }
+
         setBatchItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'completed', result } : i));
 
         if (result.analysis) {
@@ -154,33 +234,39 @@ const App: React.FC = () => {
         setBatchItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'failed', error: e.message } : i));
       }
     }));
-    setTotalTime(performance.now() - start);
     setIsProcessing(false);
-    setShowSummary(true);
   };
 
   return (
     <div className="flex flex-col items-center p-4 sm:p-8 bg-white shadow-2xl rounded-3xl w-full max-w-2xl min-h-screen sm:min-h-[90vh] relative overflow-hidden">
       
-      {/* LINE 使用者資訊狀態欄 */}
-      <div className="w-full flex items-center justify-between mb-4 px-2 py-2 bg-gray-50 rounded-2xl border border-gray-100">
-        <div className="flex items-center space-x-2">
-          {lineProfile ? (
-            <>
-              <img src={lineProfile.pictureUrl} className="w-6 h-6 rounded-full border border-indigo-200" alt="me" />
-              <span className="text-[10px] font-black text-gray-600">Hi, {lineProfile.displayName}</span>
-              <span className="text-[9px] bg-green-100 text-green-600 px-1.5 py-0.5 rounded font-black uppercase">LIFF ON</span>
-            </>
-          ) : (
-            <>
-              <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-[10px]">👤</div>
-              <span className="text-[10px] font-black text-gray-400">未登入 LINE</span>
-            </>
+      {/* 增強：顯示當前 LINE 身份資訊與 UserID */}
+      <div className="w-full mb-4 px-3 py-3 bg-gray-50 rounded-2xl border border-gray-100">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            {lineProfile ? (
+              <>
+                <img src={lineProfile.pictureUrl} className="w-8 h-8 rounded-full border-2 border-indigo-200" alt="me" />
+                <div>
+                  <div className="text-[10px] font-black text-gray-800 leading-none mb-1">{lineProfile.displayName}</div>
+                  <div className="text-[8px] font-mono text-gray-400 leading-none truncate max-w-[120px]">ID: {lineProfile.userId}</div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm">👤</div>
+                <span className="text-[10px] font-black text-gray-400">訪客模式 (未登入 LINE)</span>
+              </>
+            )}
+          </div>
+          {lineProfile && (
+            <button 
+              onClick={handleRegisterMe}
+              className="text-[9px] bg-indigo-600 text-white px-2 py-1 rounded-lg font-black hover:bg-indigo-700 transition-colors shadow-sm"
+            >
+              ➕ 註冊為客戶
+            </button>
           )}
-        </div>
-        <div className="flex items-center space-x-1">
-          <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-          <span className="text-[9px] font-black text-gray-400 uppercase tracking-tighter">AI Service Ready</span>
         </div>
       </div>
 
@@ -194,7 +280,7 @@ const App: React.FC = () => {
             <span>📜 歷史</span>
             {ocrHistory.length > 0 && <span className="bg-indigo-600 text-white text-[9px] px-1.5 py-0.5 rounded-full">{ocrHistory.length}</span>}
           </button>
-          <button onClick={() => setShowDb(true)} className="text-xs bg-gray-100 p-2 rounded-xl text-gray-600 hover:bg-gray-200">📂</button>
+          <button onClick={() => setShowDb(true)} className="text-xs bg-gray-100 p-2 rounded-xl text-gray-600 hover:bg-gray-200">📂 CRM</button>
         </div>
       </div>
 
@@ -257,15 +343,18 @@ const App: React.FC = () => {
                 key={item.id}
                 analysis={item.result!.analysis!} 
                 ocrText={item.result!.ocrText}
+                imageUrl={item.imageDataUrl}
                 onUpdateMatch={(user) => handleManualUpdateMatch(item.id, user)}
                 onDelete={() => handleDeleteItem(item.id)}
+                onLinkUser={handleLinkUser}
+                allCustomers={customers}
               />
             ))}
           </div>
         </div>
       )}
 
-      {/* 歷史紀錄彈窗 */}
+      {/* 歷史與 CRM 彈窗保持原樣 */}
       {showHistory && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl max-h-[85vh] flex flex-col">
@@ -291,7 +380,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* CRM 客戶資料庫彈窗 */}
       {showDb && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl max-h-[80vh] flex flex-col">
@@ -300,17 +388,28 @@ const App: React.FC = () => {
               <button onClick={() => setShowDb(false)} className="bg-gray-100 p-2 rounded-full text-gray-400 hover:text-gray-600">✕</button>
             </div>
             <div className="flex-1 overflow-y-auto space-y-4 scrollbar-hide">
-              {MOCK_CUSTOMER_DB.map(user => (
-                <div key={user.lineUserId} className="flex items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
+              <div className="p-3 bg-indigo-50 rounded-xl mb-4 text-[10px] text-indigo-600 font-bold leading-relaxed">
+                💡 這裡顯示系統已知的客戶。當新客戶開啟此網頁時，可點擊上方「註冊為客戶」按鈕將他的 LINE ID 自動加入此清單。
+              </div>
+              {customers.map(user => (
+                <div key={user.lineUserId} className="flex items-center p-4 bg-gray-50 rounded-2xl border border-gray-100 relative overflow-hidden">
                   <img src={user.avatar} className="w-10 h-10 rounded-full mr-3 border-2 border-white shadow-sm" alt={user.name} />
-                  <div>
-                    <div className="font-black text-gray-800 text-sm">{user.name}</div>
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2">
+                      <div className="font-black text-gray-800 text-sm">{user.name}</div>
+                      {user.isLinked ? (
+                        <span className="text-[8px] bg-green-100 text-green-600 px-1 py-0.5 rounded font-black">已連動</span>
+                      ) : (
+                        <span className="text-[8px] bg-gray-100 text-gray-400 px-1 py-0.5 rounded font-black">未連動</span>
+                      )}
+                    </div>
                     <div className="text-[10px] font-bold text-gray-400 uppercase">{user.company}</div>
+                    <div className="text-[7px] font-mono text-gray-300 truncate max-w-[150px]">{user.lineUserId}</div>
                   </div>
                 </div>
               ))}
             </div>
-            <button onClick={() => setShowDb(false)} className="mt-6 w-full py-4 bg-indigo-50 text-indigo-600 rounded-2xl font-black">關閉</button>
+            <button onClick={() => setShowDb(false)} className="mt-6 w-full py-4 bg-indigo-50 text-indigo-600 rounded-2xl font-black">關閉清單</button>
           </div>
         </div>
       )}

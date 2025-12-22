@@ -2,20 +2,24 @@
 export interface MatchedUser {
   lineUserId: string;
   name: string;
-  company?: string; 
+  company: string; 
   avatar: string;
   status: 'matched' | 'not_found';
   confidence: number; 
+  isLinked: boolean;
+  lastContact?: string;
 }
 
 export interface CustomerMailAnalysis {
-  customerName: string;
+  customerName: string; // Recipient identified
+  senderName?: string; // New: Extracted sender name
+  senderAddress?: string; // New: Extracted sender address or company
   companyName?: string; 
   customerEmail?: string;
   requestedAction: string;
   summary: string;
   isUrgent: boolean;
-  mailCategory: 'normal' | 'spam'; // 新增信件類別
+  mailCategory: 'normal' | 'spam';
   matchedUser?: MatchedUser;
 }
 

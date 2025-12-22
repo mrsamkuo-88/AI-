@@ -16,7 +16,7 @@ function calculateSimilarity(s1: string, s2: string): number {
 }
 
 /**
- * 處理郵件圖片 - 極速優化版 + 類別辨識
+ * 處理郵件圖片 - 極速優化版 + 類別辨識 + 寄件人辨識
  */
 export async function processImageForMail(
   base64Image: string,
@@ -25,8 +25,8 @@ export async function processImageForMail(
   // CRITICAL: 每次呼叫時重新建立實例以獲取最新的 API Key
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-  // 系統指令：極簡化，並強制繁體中文
-  const systemInstruction = "OCR & JSON. Extract: customerName, companyName, requestedAction, isUrgent(bool). mailCategory: 'normal' OR 'spam'. Use Traditional Chinese for 'summary' and 'requestedAction'. Be concise.";
+  // 系統指令：要求提取寄件人資訊
+  const systemInstruction = "OCR & JSON. Extract: senderName (who sent it), senderAddress, customerName (recipient), companyName, requestedAction, isUrgent(bool). mailCategory: 'normal' OR 'spam'. Use Traditional Chinese for 'summary', 'requestedAction', 'senderName'. Be concise.";
 
   const responseSchema = {
     type: Type.OBJECT,
@@ -35,14 +35,16 @@ export async function processImageForMail(
       analysis: {
         type: Type.OBJECT,
         properties: {
-          customerName: { type: Type.STRING },
+          customerName: { type: Type.STRING, description: "Recipient name" },
+          senderName: { type: Type.STRING, description: "Name of the sender/entity" },
+          senderAddress: { type: Type.STRING, description: "Address or organization of the sender" },
           companyName: { type: Type.STRING },
           requestedAction: { type: Type.STRING },
           summary: { type: Type.STRING },
           isUrgent: { type: Type.BOOLEAN },
           mailCategory: { type: Type.STRING, description: "Classification: 'normal' or 'spam'" },
         },
-        required: ['customerName', 'requestedAction', 'isUrgent', 'mailCategory'],
+        required: ['customerName', 'senderName', 'requestedAction', 'isUrgent', 'mailCategory'],
       },
     },
     required: ['ocrText', 'analysis'],
@@ -58,20 +60,24 @@ export async function processImageForMail(
         systemInstruction,
         responseMimeType: "application/json",
         responseSchema,
-        temperature: 0, // 設為 0 以獲得最穩定的結果與最快回應速度
-        maxOutputTokens: 800, // 限制輸出長度，避免冗餘生成，提升處理效率
-        thinkingConfig: { thinkingBudget: 0 }, // 強制關閉思考模式，移除推理延遲，適合純 OCR 任務
+        temperature: 0,
+        maxOutputTokens: 1000,
+        thinkingConfig: { thinkingBudget: 0 },
       },
     });
 
-    // 直接存取 .text 屬性（非函式呼叫）
     const textOutput = response.text || "{}";
     const result = JSON.parse(textOutput.trim());
     
-    // 快速 CRM 匹配 (僅在正常信件時進行強化匹配)
+    // 快速 CRM 匹配 (Recipient check)
     const rawName = result.analysis.customerName || "";
     const rawCompany = result.analysis.companyName || "";
-    let bestMatch = MOCK_CUSTOMER_DB.find(c => 
+    
+    // 從 localStorage 獲取最新的 CRM 資料進行匹配
+    const savedCustomers = localStorage.getItem('crm_customers');
+    const activeDb = savedCustomers ? JSON.parse(savedCustomers) : MOCK_CUSTOMER_DB;
+
+    let bestMatch = activeDb.find((c: MatchedUser) => 
       calculateSimilarity(rawName, c.name) > 0.8 || 
       calculateSimilarity(rawCompany, c.company) > 0.8
     );
@@ -86,7 +92,8 @@ export async function processImageForMail(
       company: rawCompany,
       avatar: '',
       status: 'not_found',
-      confidence: 0
+      confidence: 0,
+      isLinked: false
     };
 
     return result as GeminiServiceResponse;

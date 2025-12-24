@@ -1,6 +1,6 @@
 {
-  "name": "AI 拍照郵件助手",
-  "description": "這是一個手機拍照郵件應用，利用Google Gemini AI進行OCR文字辨識、自動分析客戶資訊和信件中的處理要求，並模擬發送LINE@通知。旨在簡化紙本郵件處理流程。",
+  "name": "AI 智能郵務平台 Beta",
+  "description": "專業級 AI 郵務管理系統。提供 OCR 辨識、客戶自動配對、AI 建議 LINE 通知內容生成與完整的郵務活動紀錄庫。",
   "requestFramePermissions": [
     "camera"
   ]

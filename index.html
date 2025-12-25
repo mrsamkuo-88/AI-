@@ -5,6 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 智能郵件助手 | LIFF</title>
+    <!-- 破壞瀏覽器對 HTML 入口頁面的強硬快取 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    
     <!-- LINE LIFF SDK -->
     <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <!-- Tailwind CSS CDN -->
@@ -22,7 +27,7 @@
 </head>
 <body class="bg-[#F8F9FE] min-h-screen">
     <div id="root"></div>
-    <!-- 加上 v 參數強迫 CDN 刷新檔案 -->
-    <script type="module" src="index.tsx?v=5.9.5"></script>
+    <!-- 重要：更新此參數以強迫 CDN 與瀏覽器抓取新檔案 -->
+    <script type="module" src="index.tsx?v=5.9.6"></script>
 </body>
 </html>

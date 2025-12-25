@@ -129,17 +129,18 @@ const App: React.FC = () => {
     setIsProcessing(false);
   };
 
-  const handleForceUpdate = () => {
+  const handleForceUpdate = (e: React.MouseEvent) => {
+    e.stopPropagation(); // 確保點擊事件不會冒泡
     setIsReloading(true);
     setTimeout(() => {
-      if (confirm('⚠️ 強制重新整理\n系統將會嘗試繞過所有快取，重新載入最新版本檔案。')) {
-        // 使用不重複的隨機參數來打破 CDN 快取
-        const freshUrl = window.location.origin + window.location.pathname + '?refresh=' + Date.now();
-        window.location.replace(freshUrl);
+      if (confirm('💡 確定要重新同步至雲端最新版本嗎？\n系統將會嘗試繞過所有快取強制重載。')) {
+        const currentUrl = window.location.origin + window.location.pathname;
+        const newUrl = `${currentUrl}?reload_token=${Date.now()}`;
+        window.location.replace(newUrl);
       } else {
         setIsReloading(false);
       }
-    }, 100);
+    }, 50);
   };
 
   if (viewMode === 'customer') {
@@ -151,9 +152,9 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col min-h-screen w-full max-w-2xl mx-auto bg-[#F8F9FE] shadow-2xl overflow-hidden relative">
       {isReloading && (
-        <div className="fixed inset-0 z-[100] bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in">
+        <div className="fixed inset-0 z-[100] bg-white/90 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in">
           <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p className="font-black text-indigo-600 text-sm tracking-widest uppercase animate-pulse">Synchronizing System...</p>
+          <p className="font-black text-indigo-600 text-sm tracking-widest uppercase animate-pulse">Force Reloading...</p>
         </div>
       )}
 
@@ -207,10 +208,14 @@ const App: React.FC = () => {
 
       <header className="bg-white/95 backdrop-blur-md border-b px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white text-xl shadow-lg">✉️</div>
+          <div className="relative">
+            <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white text-xl shadow-lg">✉️</div>
+            {/* 綠色連線指示燈：代表版本已同步 */}
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 border-2 border-white rounded-full animate-pulse shadow-sm"></div>
+          </div>
           <div className="flex flex-col">
-            <h1 className="text-lg font-black text-gray-900 tracking-tighter">道騰 AI 郵務</h1>
-            <div className="flex items-center space-x-2">
+            <h1 className="text-lg font-black text-gray-900 tracking-tighter leading-none">道騰 AI 郵務</h1>
+            <div className="flex items-center space-x-2 mt-1">
               <button 
                 onClick={() => setIsSystemSettingsOpen(true)} 
                 className="text-[9px] text-gray-400 font-bold uppercase tracking-widest hover:text-indigo-600 transition-colors"
@@ -218,13 +223,14 @@ const App: React.FC = () => {
                 {currentVenue.name} ⚙️
               </button>
               
+              {/* 大按鈕同步區：增加 z-index 與內距確保手機容易點擊 */}
               <button 
                 onClick={handleForceUpdate}
-                title="同步至最新版本"
-                className="flex items-center space-x-1.5 px-3 py-1 rounded-full bg-indigo-50 text-indigo-500 hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-95"
+                title="強制同步至最新版本"
+                className="relative z-50 flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-90 border border-indigo-100"
               >
-                <span className="text-[10px]">🔄</span>
-                <span className="text-[9px] font-black uppercase tracking-tighter">同步版本</span>
+                <span className="text-xs">🔄</span>
+                <span className="text-[10px] font-black uppercase tracking-tighter">強制同步</span>
               </button>
             </div>
           </div>
@@ -302,8 +308,9 @@ const App: React.FC = () => {
               </div>
             )}
 
-            <div className="flex flex-col items-center py-6 opacity-40">
-              <p className="text-[9px] font-black uppercase tracking-[0.5em] text-gray-400 italic">SYSTEM VERSION: {APP_VERSION}</p>
+            <div className="flex flex-col items-center py-6">
+              <p className="text-[10px] font-black uppercase tracking-[0.5em] text-indigo-300">DEPLOYED VERSION: {APP_VERSION}</p>
+              <p className="text-[8px] text-gray-300 mt-2">© DT Space System Integrity Verified</p>
             </div>
           </div>
         )}

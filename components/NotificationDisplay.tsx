@@ -63,7 +63,8 @@ const NotificationDisplay: React.FC<NotificationDisplayProps> = ({
     if (isOffice && itemLabel === '郵件') {
       placementText = `今日信件，幫您投遞到您的辦公室信箱內。`;
     } else {
-      placementText = `我們已將您的${itemLabel}放置於您所在樓層的櫃檯（21F/27F），方便您隨時親自前來領取。`;
+      const floorStr = matchedUser.preferredFloor || '櫃檯';
+      placementText = `我們已將您的${itemLabel}放置於您所在樓層的${floorStr}，方便您隨時親自前來領取。`;
     }
 
     // ID line for Business Registration
@@ -181,6 +182,29 @@ ${servicesSection}
 
   const canProcess = (currentStatus === 'pending' || currentStatus === 'notified') && !isArchived;
 
+  // 定義所有可能的處置按鈕
+  const allActions = [
+    { id: 'scanned', label: '數位掃描', icon: '📧', color: 'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100' },
+    { id: 'move_to_1f', label: '1F 轉交', icon: '🚚', color: 'bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-100' },
+    { id: 'at_counter_12', label: '12F 櫃台', icon: '🏢', color: 'bg-teal-50 text-teal-600 border-teal-100 hover:bg-teal-100' },
+    { id: 'at_counter', label: '21F 櫃台', icon: '📍', color: 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100' },
+    { id: 'at_counter_27', label: '27F 櫃台', icon: '🏢', color: 'bg-cyan-50 text-cyan-600 border-cyan-100 hover:bg-cyan-100' },
+    { id: 'scheduled', label: '月底寄送', icon: '📦', color: 'bg-purple-50 text-purple-600 border-purple-100 hover:bg-purple-100' },
+    { id: 'discarded', label: '碎紙銷毀', icon: '✂️', color: 'bg-gray-50 text-gray-600 border-gray-100 hover:bg-gray-100' },
+  ];
+
+  // 根據客戶館別動態過濾按鈕
+  const displayedActions = allActions.filter(action => {
+    if (!isMatched) return true; // 未匹配時顯示所有選項供手動處理
+    if (matchedUser.venue === '民權館') {
+      return action.id !== 'at_counter_12';
+    }
+    if (matchedUser.venue === '四維館') {
+      return action.id !== 'at_counter' && action.id !== 'at_counter_27';
+    }
+    return true;
+  });
+
   return (
     <div className={`w-full bg-white rounded-[48px] overflow-hidden border border-gray-100 shadow-2xl mb-8 relative animate-in fade-in duration-500 ${isArchived ? 'opacity-90' : ''}`}>
       
@@ -188,7 +212,7 @@ ${servicesSection}
       <div className={`px-8 pt-8 pb-6 flex items-center justify-between transition-colors duration-500 ${isArchived ? 'bg-[#4B4B4B] text-white' : isMatched ? 'bg-indigo-600 text-white' : 'bg-red-500 text-white'}`}>
         <div className="flex items-center space-x-4">
           <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center font-black text-xl border border-white/20 shadow-inner">
-            {isMatched && matchedUser.productCategory === '工商登記' ? '#' : ''}{displayId}
+            {displayId}
           </div>
           <div className="flex flex-col">
             <p className="font-black text-lg tracking-tight">
@@ -263,15 +287,8 @@ ${servicesSection}
         {canProcess && (
           <div className="pt-10 border-t border-gray-100 mt-10">
             <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[0.3em] mb-6 text-center">任務分流與處置中心</h4>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-              {[
-                { id: 'scanned', label: '數位掃描', icon: '📧', color: 'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100' },
-                { id: 'move_to_1f', label: '1F 轉交', icon: '🚚', color: 'bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-100' },
-                { id: 'at_counter_12', label: '12F 櫃台', icon: '🏢', color: 'bg-teal-50 text-teal-600 border-teal-100 hover:bg-teal-100' },
-                { id: 'at_counter', label: '21F 櫃台', icon: '📍', color: 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100' },
-                { id: 'scheduled', label: '月底寄送', icon: '📦', icon_alt: '📮', color: 'bg-purple-50 text-purple-600 border-purple-100 hover:bg-purple-100' },
-                { id: 'discarded', label: '碎紙銷毀', icon: '✂️', color: 'bg-gray-50 text-gray-600 border-gray-100 hover:bg-gray-100' },
-              ].map((action) => (
+            <div className={`grid grid-cols-2 sm:grid-cols-3 ${displayedActions.length > 4 ? 'md:grid-cols-6' : 'md:grid-cols-4'} gap-4`}>
+              {displayedActions.map((action) => (
                 <button 
                   key={action.id}
                   disabled={actionLoading !== null}

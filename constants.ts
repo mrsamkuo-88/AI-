@@ -71,4 +71,4 @@ export const MOCK_CUSTOMER_DB = [
   }
 ];
 
-export const APP_VERSION = "5.9.3-RELOAD-FIXED";
+export const APP_VERSION = "5.9.5-ULTRA-SYNC";

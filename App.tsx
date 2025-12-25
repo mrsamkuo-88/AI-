@@ -10,7 +10,7 @@ import UnifiedTaskDashboard from './components/DeliveryManagement';
 import CustomerDashboard from './components/CustomerDashboard';
 import ManualNotificationModal from './components/ManualNotificationModal';
 import SystemSettingsModal, { BackupData } from './components/SystemSettingsModal';
-import { LIFF_ID, MOCK_CUSTOMER_DB } from './constants';
+import { LIFF_ID, MOCK_CUSTOMER_DB, APP_VERSION } from './constants';
 
 const DB_KEY = 'AI_MAIL_ASSISTANT_CRM_V5';
 const LOG_KEY = 'AI_MAIL_ACTIVITY_LOG_V5';
@@ -264,6 +264,11 @@ const App: React.FC = () => {
                 <p className="text-gray-400 text-[10px] font-bold mt-2">請點擊上方按鈕開始批次上傳</p>
               </div>
             )}
+            
+            {/* 版本確認腳註 */}
+            <div className="text-center pb-10">
+              <p className="text-[9px] font-black text-gray-200 uppercase tracking-[0.5em]">{APP_VERSION}</p>
+            </div>
           </div>
         )}
 

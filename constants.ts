@@ -71,4 +71,4 @@ export const MOCK_CUSTOMER_DB = [
   }
 ];
 
-export const APP_VERSION = "5.8.3-VENUE-FIELD";
+export const APP_VERSION = "5.9.1-STABLE";

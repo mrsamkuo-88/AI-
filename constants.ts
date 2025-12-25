@@ -71,4 +71,4 @@ export const MOCK_CUSTOMER_DB = [
   }
 ];
 
-export const APP_VERSION = "6.0.0-GOLDEN-SYNC";
+export const APP_VERSION = "6.1.0-ULTRA-SYNC";

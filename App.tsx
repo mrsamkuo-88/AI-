@@ -132,8 +132,8 @@ const App: React.FC = () => {
   const handleForceUpdate = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsReloading(true);
-    if (confirm('⚠️ 正在執行【深度雲端刷新】\n這將會強制清除快取並重新載入 6.0.0 版本，是否繼續？')) {
-      const freshUrl = `${window.location.origin}${window.location.pathname}?ref=${Date.now()}`;
+    if (confirm('🚀 正在執行【ULTRA 雲端重新整理】\n系統將會嘗試繞過所有快取載入 V6.1.0。是否繼續？')) {
+      const freshUrl = `${window.location.origin}${window.location.pathname}?sync_v=610&t=${Date.now()}`;
       window.location.replace(freshUrl);
     } else {
       setIsReloading(false);
@@ -149,9 +149,9 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col min-h-screen w-full max-w-2xl mx-auto bg-[#F0F2F5] shadow-2xl overflow-hidden relative font-sans">
       {isReloading && (
-        <div className="fixed inset-0 z-[200] bg-indigo-900/95 backdrop-blur-xl flex flex-col items-center justify-center animate-in fade-in">
-          <div className="w-20 h-20 border-[6px] border-white/20 border-t-white rounded-full animate-spin mb-6"></div>
-          <p className="font-black text-white text-lg tracking-widest uppercase animate-pulse">Synchronizing V6.0...</p>
+        <div className="fixed inset-0 z-[200] bg-[#1E293B]/95 backdrop-blur-xl flex flex-col items-center justify-center animate-in fade-in">
+          <div className="w-20 h-20 border-[6px] border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-6"></div>
+          <p className="font-black text-white text-lg tracking-widest uppercase animate-pulse">Ultra Syncing V6.1.0...</p>
         </div>
       )}
 
@@ -203,29 +203,27 @@ const App: React.FC = () => {
         />
       )}
 
-      {/* 視覺重大更新：深色標頭，確保與舊版一眼區分 */}
       <header className="bg-[#1E293B] px-6 py-5 flex justify-between items-center sticky top-0 z-50 shadow-2xl">
         <div className="flex items-center space-x-4">
           <div className="relative group cursor-pointer" onClick={handleForceUpdate}>
             <div className="w-12 h-12 bg-indigo-500 rounded-2xl flex items-center justify-center text-white text-2xl shadow-lg group-hover:scale-110 transition-transform">✉️</div>
-            <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 border-2 border-[#1E293B] rounded-full animate-ping"></div>
-            <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 border-2 border-[#1E293B] rounded-full"></div>
+            <div className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-400 border-2 border-[#1E293B] rounded-full animate-ping"></div>
           </div>
           <div className="flex flex-col">
-            <h1 className="text-xl font-black text-white tracking-tighter leading-none">道騰 AI 郵務 <span className="text-indigo-400">V6</span></h1>
+            <h1 className="text-xl font-black text-white tracking-tighter leading-none">道騰 AI 郵務 <span className="text-emerald-400">V6.1</span></h1>
             <div className="flex items-center space-x-2 mt-1.5">
               <button 
                 onClick={() => setIsSystemSettingsOpen(true)} 
-                className="text-[10px] text-gray-400 font-black uppercase tracking-widest hover:text-white transition-colors flex items-center gap-1"
+                className="text-[10px] text-gray-400 font-black uppercase tracking-widest hover:text-white transition-colors"
               >
                 {currentVenue.name} ⚙️
               </button>
               <div className="h-3 w-[1px] bg-white/10 mx-1"></div>
               <button 
                 onClick={handleForceUpdate}
-                className="text-[10px] font-black text-indigo-400 uppercase tracking-tighter hover:text-white transition-all flex items-center gap-1"
+                className="text-[10px] font-black text-emerald-400 uppercase tracking-tighter hover:text-white transition-all"
               >
-                🔄 強制同步
+                🔄 雲端更新
               </button>
             </div>
           </div>
@@ -272,10 +270,9 @@ const App: React.FC = () => {
               <div className="space-y-8">
                 <div className="flex items-center justify-between px-4">
                   <div className="flex items-center space-x-3">
-                    <div className="w-2 h-8 bg-indigo-500 rounded-full"></div>
+                    <div className="w-2 h-8 bg-emerald-500 rounded-full"></div>
                     <h3 className="text-2xl font-black text-gray-900 tracking-tight">待處理項目 ({pendingProcessingLogs.length})</h3>
                   </div>
-                  <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest bg-white px-5 py-2 rounded-full border border-gray-100 shadow-sm">CHECK & SEND</span>
                 </div>
                 <div className="space-y-8">
                   {pendingProcessingLogs.map(log => (
@@ -304,7 +301,7 @@ const App: React.FC = () => {
                   <span className="text-6xl">📭</span>
                 </div>
                 <p className="text-[12px] font-black text-gray-300 uppercase tracking-[0.5em]">目前系統清空</p>
-                <p className="text-gray-400 text-[10px] font-bold mt-3">請上傳新的郵件照片開始 V6.0 作業</p>
+                <p className="text-gray-400 text-[10px] font-bold mt-3">請上傳新的郵件照片開始 V6.1 作業</p>
               </div>
             )}
           </div>
@@ -333,7 +330,6 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* 底部導覽列 */}
       <nav className="fixed bottom-10 left-1/2 -translate-x-1/2 w-[92%] max-w-lg bg-white/80 backdrop-blur-2xl border border-white/20 rounded-[45px] shadow-3xl flex justify-around p-4 z-50">
         {[
           { id: 'scan', label: '掃描儀', icon: '📸' },
@@ -351,10 +347,9 @@ const App: React.FC = () => {
         ))}
       </nav>
 
-      {/* 漂浮版本標籤：確保用戶確認這是 V6.0 */}
       <div className="fixed top-24 right-4 z-[60] pointer-events-none">
-         <div className="bg-black/10 backdrop-blur text-[8px] font-black text-gray-400 px-3 py-1 rounded-full border border-black/5 uppercase tracking-widest">
-           {APP_VERSION}
+         <div className="bg-emerald-500/10 backdrop-blur text-[8px] font-black text-emerald-600 px-3 py-1 rounded-full border border-emerald-500/20 uppercase tracking-widest shadow-sm">
+           V6.1.0 STABLE
          </div>
       </div>
     </div>

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>道騰 AI 郵務 V6.0</title>
+    <title>道騰 AI 郵務 V6.1.0</title>
     <!-- 極致防快取指令 -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -30,7 +30,7 @@
         navigator.serviceWorker.getRegistrations().then(function(registrations) {
             for(let registration of registrations) {
                 registration.unregister();
-                console.log('Old ServiceWorker Unregistered');
+                console.log('Old ServiceWorker Unregistered - V6.1.0');
             }
         });
     }
@@ -38,7 +38,7 @@
 </head>
 <body class="bg-[#F0F2F5] min-h-screen">
     <div id="root"></div>
-    <!-- 隨機化載入路徑，確保不抓取快取 -->
-    <script type="module" src="index.tsx?v=6.0.0-GOLDEN-SYNC"></script>
+    <!-- 加上更長的時間戳記參數，確保伺服器與瀏覽器不抓取舊版 -->
+    <script type="module" src="index.tsx?v=6.1.0-ULTRA-SYNC-REFRESH"></script>
 </body>
 </html>

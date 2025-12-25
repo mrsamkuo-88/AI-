@@ -18,7 +18,7 @@ const PRODUCT_CATEGORY_OPTIONS = ['工商登記', '辦公室'];
 const CustomerManagement: React.FC<CustomerManagementProps> = ({ customers, logs, onUpdate, onProcessMail, onDeleteCustomer }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
+  const [activeTagFilters, setActiveTagFilters] = useState<string[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<MatchedUser | null>(null);
   const [newCustomer, setNewCustomer] = useState<Partial<MatchedUser>>({
     customerId: '',
@@ -97,11 +97,20 @@ const CustomerManagement: React.FC<CustomerManagementProps> = ({ customers, logs
     }
   };
 
+  const toggleTagFilter = (tag: string) => {
+    setActiveTagFilters(prev => 
+      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+    );
+  };
+
   const filtered = customers.filter(c => {
     const matchesSearch = c.name.includes(searchTerm) || 
                           c.company.includes(searchTerm) || 
                           c.customerId.includes(searchTerm);
-    const matchesTag = activeTagFilter ? c.tags?.includes(activeTagFilter) : true;
+    // OR logic: match ANY of the selected filters
+    const matchesTag = activeTagFilters.length > 0 
+      ? c.tags?.some(tag => activeTagFilters.includes(tag)) 
+      : true;
     return matchesSearch && matchesTag;
   });
 
@@ -250,8 +259,8 @@ const CustomerManagement: React.FC<CustomerManagementProps> = ({ customers, logs
             {TAG_OPTIONS.map(tag => (
               <button
                 key={tag}
-                onClick={() => setActiveTagFilter(activeTagFilter === tag ? null : tag)}
-                className={`px-3 py-2 rounded-lg text-[9px] font-black transition-all border ${activeTagFilter === tag ? 'bg-indigo-600 text-white border-transparent shadow-sm' : 'bg-white text-gray-400 border-gray-100'}`}
+                onClick={() => toggleTagFilter(tag)}
+                className={`px-3 py-2 rounded-lg text-[9px] font-black transition-all border ${activeTagFilters.includes(tag) ? 'bg-indigo-600 text-white border-transparent shadow-sm' : 'bg-white text-gray-400 border-gray-100'}`}
               >
                 {tag}
               </button>

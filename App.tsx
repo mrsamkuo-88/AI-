@@ -48,6 +48,7 @@ const App: React.FC = () => {
   const [globalSelectedCustomer, setGlobalSelectedCustomer] = useState<MatchedUser | null>(null);
   const [isManualNotifyOpen, setIsManualNotifyOpen] = useState(false);
   const [isSystemSettingsOpen, setIsSystemSettingsOpen] = useState(false);
+  const [isReloading, setIsReloading] = useState(false);
 
   useEffect(() => {
     const savedCrm = localStorage.getItem(DB_KEY);
@@ -128,6 +129,20 @@ const App: React.FC = () => {
     setIsProcessing(false);
   };
 
+  const handleForceUpdate = () => {
+    setIsReloading(true);
+    // 小延遲讓動畫出現，並確保 user 看到點擊反應
+    setTimeout(() => {
+      if (confirm('確定要同步至最新版本嗎？\n系統將會強制清除快取並重新載入。')) {
+        const currentUrl = window.location.href.split('?')[0];
+        const newUrl = `${currentUrl}?v=${Date.now()}`;
+        window.location.replace(newUrl);
+      } else {
+        setIsReloading(false);
+      }
+    }, 150);
+  };
+
   if (viewMode === 'customer') {
     return <CustomerRegistrationView profile={lineProfile} onRegister={() => {}} isRegistered={false} />;
   }
@@ -187,9 +202,24 @@ const App: React.FC = () => {
       <header className="bg-white/95 backdrop-blur-md border-b px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white text-xl shadow-lg">✉️</div>
-          <div>
+          <div className="flex flex-col">
             <h1 className="text-lg font-black text-gray-900 tracking-tighter">道騰 AI 郵務</h1>
-            <button onClick={() => setIsSystemSettingsOpen(true)} className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">{currentVenue.name} ⚙️</button>
+            <div className="flex items-center space-x-3">
+              <button 
+                onClick={() => setIsSystemSettingsOpen(true)} 
+                className="text-[9px] text-gray-400 font-bold uppercase tracking-widest hover:text-indigo-600 transition-colors"
+              >
+                {currentVenue.name} ⚙️
+              </button>
+              {/* 加大更新按鈕尺寸與動畫 */}
+              <button 
+                onClick={handleForceUpdate}
+                title="強制同步最新版本"
+                className={`w-10 h-10 -my-2 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-500 hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-90 ${isReloading ? 'animate-spin' : ''}`}
+              >
+                <span className="text-lg transform rotate-45">🔄</span>
+              </button>
+            </div>
           </div>
         </div>
         
@@ -264,10 +294,10 @@ const App: React.FC = () => {
                 <p className="text-gray-400 text-[10px] font-bold mt-2">請點擊上方按鈕開始批次上傳</p>
               </div>
             )}
-            
-            {/* 版本確認腳註 */}
-            <div className="text-center pb-10">
-              <p className="text-[9px] font-black text-gray-200 uppercase tracking-[0.5em]">{APP_VERSION}</p>
+
+            {/* 版本腳註：方便同仁確認是否為最新版 */}
+            <div className="flex flex-col items-center py-6 opacity-20">
+              <p className="text-[9px] font-black uppercase tracking-[0.5em] text-gray-400">System Version: {APP_VERSION}</p>
             </div>
           </div>
         )}

@@ -132,15 +132,12 @@ const App: React.FC = () => {
   const handleForceUpdate = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsReloading(true);
-    setTimeout(() => {
-      if (confirm('💡 提示：系統將執行「雲端強制同步」並清除本地快取。\n確定要繼續嗎？')) {
-        // 使用 cache-busting URL 
-        const freshUrl = `${window.location.origin}${window.location.pathname}?sync_ts=${Date.now()}`;
-        window.location.assign(freshUrl);
-      } else {
-        setIsReloading(false);
-      }
-    }, 50);
+    if (confirm('⚠️ 正在執行【深度雲端刷新】\n這將會強制清除快取並重新載入 6.0.0 版本，是否繼續？')) {
+      const freshUrl = `${window.location.origin}${window.location.pathname}?ref=${Date.now()}`;
+      window.location.replace(freshUrl);
+    } else {
+      setIsReloading(false);
+    }
   };
 
   if (viewMode === 'customer') {
@@ -150,11 +147,11 @@ const App: React.FC = () => {
   const pendingProcessingLogs = mailLogs.filter(log => (log.processingStatus === 'pending' || log.processingStatus === 'notified') && !log.isArchived);
 
   return (
-    <div className="flex flex-col min-h-screen w-full max-w-2xl mx-auto bg-[#F8F9FE] shadow-2xl overflow-hidden relative">
+    <div className="flex flex-col min-h-screen w-full max-w-2xl mx-auto bg-[#F0F2F5] shadow-2xl overflow-hidden relative font-sans">
       {isReloading && (
-        <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in">
-          <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p className="font-black text-indigo-600 text-sm tracking-widest uppercase animate-pulse">Syncing Cloud State...</p>
+        <div className="fixed inset-0 z-[200] bg-indigo-900/95 backdrop-blur-xl flex flex-col items-center justify-center animate-in fade-in">
+          <div className="w-20 h-20 border-[6px] border-white/20 border-t-white rounded-full animate-spin mb-6"></div>
+          <p className="font-black text-white text-lg tracking-widest uppercase animate-pulse">Synchronizing V6.0...</p>
         </div>
       )}
 
@@ -206,40 +203,40 @@ const App: React.FC = () => {
         />
       )}
 
-      <header className="bg-white/95 backdrop-blur-md border-b px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
-        <div className="flex items-center space-x-3">
-          <div className="relative">
-            <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white text-xl shadow-lg">✉️</div>
-            <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full animate-pulse shadow-sm"></div>
+      {/* 視覺重大更新：深色標頭，確保與舊版一眼區分 */}
+      <header className="bg-[#1E293B] px-6 py-5 flex justify-between items-center sticky top-0 z-50 shadow-2xl">
+        <div className="flex items-center space-x-4">
+          <div className="relative group cursor-pointer" onClick={handleForceUpdate}>
+            <div className="w-12 h-12 bg-indigo-500 rounded-2xl flex items-center justify-center text-white text-2xl shadow-lg group-hover:scale-110 transition-transform">✉️</div>
+            <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 border-2 border-[#1E293B] rounded-full animate-ping"></div>
+            <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 border-2 border-[#1E293B] rounded-full"></div>
           </div>
           <div className="flex flex-col">
-            <h1 className="text-lg font-black text-gray-900 tracking-tighter leading-none">道騰 AI 郵務</h1>
-            <div className="flex items-center space-x-2 mt-1">
+            <h1 className="text-xl font-black text-white tracking-tighter leading-none">道騰 AI 郵務 <span className="text-indigo-400">V6</span></h1>
+            <div className="flex items-center space-x-2 mt-1.5">
               <button 
                 onClick={() => setIsSystemSettingsOpen(true)} 
-                className="text-[9px] text-gray-400 font-bold uppercase tracking-widest hover:text-indigo-600 transition-colors"
+                className="text-[10px] text-gray-400 font-black uppercase tracking-widest hover:text-white transition-colors flex items-center gap-1"
               >
                 {currentVenue.name} ⚙️
               </button>
-              
+              <div className="h-3 w-[1px] bg-white/10 mx-1"></div>
               <button 
                 onClick={handleForceUpdate}
-                title="強制同步至最新版本"
-                className="relative z-50 flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-90 border border-indigo-100"
+                className="text-[10px] font-black text-indigo-400 uppercase tracking-tighter hover:text-white transition-all flex items-center gap-1"
               >
-                <span className="text-xs">🔄</span>
-                <span className="text-[10px] font-black uppercase tracking-tighter">雲端同步</span>
+                🔄 強制同步
               </button>
             </div>
           </div>
         </div>
         
-        <div className="flex bg-gray-100 p-1 rounded-xl">
+        <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 backdrop-blur-md">
           {VENUES.map(v => (
             <button 
               key={v.name}
               onClick={() => updateVenue(v)}
-              className={`px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${currentVenue.name === v.name ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400'}`}
+              className={`px-4 py-2 text-[10px] font-black rounded-xl transition-all ${currentVenue.name === v.name ? 'bg-indigo-500 text-white shadow-lg' : 'text-gray-400 hover:text-gray-200'}`}
             >
               {v.name}
             </button>
@@ -247,37 +244,40 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-4 sm:px-8 py-8 pb-40">
+      <main className="flex-1 overflow-y-auto px-4 sm:px-8 py-10 pb-44">
         {activeTab === 'scan' && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
             <ImageUploader 
               onImagesSelect={handleImageScan} 
               onOpenManualNotification={() => setIsManualNotifyOpen(true)}
             />
             
             {isProcessing && (
-              <div className="bg-indigo-600 p-10 rounded-[48px] text-center text-white shadow-2xl shadow-indigo-200 animate-in zoom-in border-4 border-indigo-500">
-                 <div className="relative w-24 h-24 mx-auto mb-8">
-                    <div className="absolute inset-0 border-4 border-white/20 rounded-full"></div>
-                    <div className="absolute inset-0 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
-                    <div className="absolute inset-0 flex items-center justify-center font-black text-lg">
+              <div className="bg-indigo-600 p-12 rounded-[56px] text-center text-white shadow-3xl shadow-indigo-200 animate-in zoom-in border-4 border-indigo-500">
+                 <div className="relative w-28 h-28 mx-auto mb-10">
+                    <div className="absolute inset-0 border-[6px] border-white/20 rounded-full"></div>
+                    <div className="absolute inset-0 border-[6px] border-white border-t-transparent rounded-full animate-spin"></div>
+                    <div className="absolute inset-0 flex items-center justify-center font-black text-2xl">
                       {Math.round((processingProgress.current / processingProgress.total) * 100)}%
                     </div>
                  </div>
-                 <h3 className="font-black text-xl mb-2">AI 批次辨識中...</h3>
-                 <p className="text-white/70 text-xs font-black uppercase tracking-[0.2em]">
-                   正在處理第 {processingProgress.current} / {processingProgress.total} 封郵件
+                 <h3 className="font-black text-2xl mb-3">AI 深度辨識中</h3>
+                 <p className="text-white/60 text-xs font-black uppercase tracking-[0.3em]">
+                   V6 CORE: 第 {processingProgress.current} / {processingProgress.total} 封
                  </p>
               </div>
             )}
 
             {pendingProcessingLogs.length > 0 && (
-              <div className="space-y-6">
-                <div className="flex items-center justify-between px-2">
-                  <h3 className="text-xl font-black text-gray-800 tracking-tight">待處理通知 ({pendingProcessingLogs.length})</h3>
-                  <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest bg-indigo-50 px-4 py-1.5 rounded-full border border-indigo-100">檢查結果並發送</span>
+              <div className="space-y-8">
+                <div className="flex items-center justify-between px-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-2 h-8 bg-indigo-500 rounded-full"></div>
+                    <h3 className="text-2xl font-black text-gray-900 tracking-tight">待處理項目 ({pendingProcessingLogs.length})</h3>
+                  </div>
+                  <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest bg-white px-5 py-2 rounded-full border border-gray-100 shadow-sm">CHECK & SEND</span>
                 </div>
-                <div className="space-y-6">
+                <div className="space-y-8">
                   {pendingProcessingLogs.map(log => (
                     <NotificationDisplay 
                       key={log.id}
@@ -299,17 +299,14 @@ const App: React.FC = () => {
             )}
 
             {!isProcessing && pendingProcessingLogs.length === 0 && (
-              <div className="py-24 text-center bg-white/50 rounded-[56px] border-4 border-dashed border-gray-100 flex flex-col items-center">
-                <div className="text-5xl mb-6 opacity-20 grayscale">📭</div>
-                <p className="text-[11px] font-black text-gray-300 uppercase tracking-[0.4em]">目前暫無待處理郵件</p>
-                <p className="text-gray-400 text-[10px] font-bold mt-2">請點擊上方按鈕開始批次上傳</p>
+              <div className="py-28 text-center bg-white rounded-[64px] border border-gray-100 shadow-xl flex flex-col items-center">
+                <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mb-8 grayscale opacity-20">
+                  <span className="text-6xl">📭</span>
+                </div>
+                <p className="text-[12px] font-black text-gray-300 uppercase tracking-[0.5em]">目前系統清空</p>
+                <p className="text-gray-400 text-[10px] font-bold mt-3">請上傳新的郵件照片開始 V6.0 作業</p>
               </div>
             )}
-
-            <div className="flex flex-col items-center py-6">
-              <p className="text-[10px] font-black uppercase tracking-[0.5em] text-indigo-400">STATUS: ONLINE • VER: {APP_VERSION}</p>
-              <p className="text-[8px] text-gray-300 mt-2">INTEGRITY CHECK PASSED • CDN REFRESHED</p>
-            </div>
           </div>
         )}
 
@@ -336,22 +333,30 @@ const App: React.FC = () => {
         )}
       </main>
 
-      <nav className="fixed bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-white/90 backdrop-blur-xl border border-white/20 rounded-[40px] shadow-2xl flex justify-around p-3 z-50">
+      {/* 底部導覽列 */}
+      <nav className="fixed bottom-10 left-1/2 -translate-x-1/2 w-[92%] max-w-lg bg-white/80 backdrop-blur-2xl border border-white/20 rounded-[45px] shadow-3xl flex justify-around p-4 z-50">
         {[
-          { id: 'scan', label: '掃描', icon: '📸' },
-          { id: 'crm', label: '客戶', icon: '👥' },
-          { id: 'delivery', label: '任務', icon: '🚚' },
+          { id: 'scan', label: '掃描儀', icon: '📸' },
+          { id: 'crm', label: '資料庫', icon: '👥' },
+          { id: 'delivery', label: '任務中心', icon: '🚚' },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`flex flex-col items-center px-6 py-3 rounded-[30px] transition-all duration-300 ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-100' : 'text-gray-400 hover:bg-gray-50'}`}
+            className={`flex flex-col items-center px-8 py-4 rounded-[35px] transition-all duration-500 ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-2xl shadow-indigo-200' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
           >
-            <span className="text-xl mb-1">{tab.icon}</span>
-            <span className="text-[9px] font-black uppercase tracking-widest">{tab.label}</span>
+            <span className="text-2xl mb-1.5">{tab.icon}</span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em]">{tab.label}</span>
           </button>
         ))}
       </nav>
+
+      {/* 漂浮版本標籤：確保用戶確認這是 V6.0 */}
+      <div className="fixed top-24 right-4 z-[60] pointer-events-none">
+         <div className="bg-black/10 backdrop-blur text-[8px] font-black text-gray-400 px-3 py-1 rounded-full border border-black/5 uppercase tracking-widest">
+           {APP_VERSION}
+         </div>
+      </div>
     </div>
   );
 };

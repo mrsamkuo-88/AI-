@@ -37,7 +37,13 @@ const NotificationDisplay: React.FC<NotificationDisplayProps> = ({
   const matchedUser = analysis.matchedUser;
   const isMatched = matchedUser?.status === 'matched';
 
-  // 確保顯示正確的取信編號，若匹配則使用資料庫編號
+  // FIX: Added filteredUsers to support searching through customers for manual re-matching
+  const filteredUsers = allCustomers.filter(user => 
+    user.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    user.company.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    user.customerId.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   const displayId = isMatched ? matchedUser.customerId : '??';
   
   // 處理最終文案
@@ -49,16 +55,13 @@ const NotificationDisplay: React.FC<NotificationDisplayProps> = ({
     const isBusinessReg = matchedUser.productCategory === '工商登記';
     const isMvpOrVip = isVip || isMvp;
     
-    // Determine Salutation
     let salutation = `${matchedUser.name} 您好 👋`;
     if (isVip) salutation = `親愛的道騰尊榮 VIP ${matchedUser.name} 您好 👑`;
     else if (isMvp) salutation = `道騰傑出 MVP ${matchedUser.name} 您好 ✨`;
 
-    // Item Type Detection from analysis summary or provided type
     const itemLabel = analysis.summary.includes('包裹') ? '包裹' : '郵件';
     const itemEmoji = itemLabel === '包裹' ? '📦' : '📩';
 
-    // Placement logic
     let placementText = '';
     if (isOffice && itemLabel === '郵件') {
       placementText = `今日信件，幫您投遞到您的辦公室信箱內。`;
@@ -67,10 +70,8 @@ const NotificationDisplay: React.FC<NotificationDisplayProps> = ({
       placementText = `我們已將您的${itemLabel}放置於您所在樓層的${floorStr}，方便您隨時親自前來領取。`;
     }
 
-    // ID line for Business Registration
     const idLine = isBusinessReg ? `\n您的取信編號【#${matchedUser.customerId}】` : '';
 
-    // Assisted Services Logic
     let servicesSection = '';
     if (isBusinessReg && isMvpOrVip) {
       const tierLabel = isVip ? '尊榮 VIP' : '傑出 MVP';
@@ -83,14 +84,12 @@ const NotificationDisplay: React.FC<NotificationDisplayProps> = ({
 ⑤ 若您判斷為非重要項目，可授權我們直接銷毀處理
 我們將根據您的指示，盡快為您安排，確保服務高效且安心。`;
     } else if (isBusinessReg) {
-      // Basic Business Reg
       servicesSection = `
 💡 如您暫時不便親自前來，我們也可提供以下協助服務（僅限緊急情況）：
 協助轉寄${itemLabel}（運費另計，請提供完整收件地址及寄送方式，例如是否急件）
 `;
     }
 
-    // Main Template
     finalReply = `${salutation}，
 這裡有一件您的「${itemLabel}」已送達 ${itemEmoji}。
 ${placementText}${idLine}
@@ -110,79 +109,21 @@ ${servicesSection}
     } catch (err) { alert('複製失敗'); }
   };
 
-  const handleCopyImage = async () => {
-    if (!imageUrl) return;
-    setImgCopyStatus('loading');
-    try {
-      const response = await fetch(imageUrl);
-      const blob = await response.blob();
-      
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(blob);
-      img.src = objectUrl;
-      
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-      });
-
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Canvas context failed');
-      ctx.drawImage(img, 0, 0);
-
-      canvas.toBlob(async (pngBlob) => {
-        if (pngBlob) {
-          try {
-            await navigator.clipboard.write([
-              new ClipboardItem({ 'image/png': pngBlob })
-            ]);
-            setImgCopyStatus('copied');
-            setTimeout(() => setImgCopyStatus('idle'), 2000);
-          } catch (clipErr) {
-            console.error('Clipboard write error:', clipErr);
-            alert('系統限制：此瀏覽器不支援直接複製圖片。請長按圖片手動儲存並轉傳。');
-            setImgCopyStatus('idle');
-          }
-        }
-        URL.revokeObjectURL(objectUrl);
-      }, 'image/png');
-
-    } catch (err) {
-      console.error('Image copy failed:', err);
-      alert('掃描圖處理失敗。建議直接長按圖片儲存後，再於 LINE 中傳送附件。');
-      setImgCopyStatus('idle');
-    }
-  };
-
-  const handleAction = async (status: MailProcessingStatus, label: string) => {
+  const handleAction = async (status: MailProcessingStatus) => {
     setActionLoading(status);
     await new Promise(resolve => setTimeout(resolve, 400));
     try {
       onMarkAsNotified?.(status);
     } catch (err) {
-      alert("處置失敗，請重試");
+      alert("處置失敗");
     } finally {
       setActionLoading(null);
     }
   };
 
-  const openDashboard = () => {
-    if (!isMatched) return alert('請先搜尋並配對客戶，才能開啟處置儀表板。');
-    onOpenDashboard?.(matchedUser);
-  };
-
-  const filteredUsers = allCustomers.filter(user => 
-    user.name.includes(searchQuery) || 
-    user.company.includes(searchQuery) || 
-    (user.customerId && user.customerId.toString().includes(searchQuery))
-  );
-
   const canProcess = (currentStatus === 'pending' || currentStatus === 'notified') && !isArchived;
 
-  // 定義所有可能的處置按鈕
+  // 定義所有處置按鈕
   const allActions = [
     { id: 'scanned', label: '數位掃描', icon: '📧', color: 'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100' },
     { id: 'move_to_1f', label: '1F 轉交', icon: '🚚', color: 'bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-100' },
@@ -193,9 +134,8 @@ ${servicesSection}
     { id: 'discarded', label: '碎紙銷毀', icon: '✂️', color: 'bg-gray-50 text-gray-600 border-gray-100 hover:bg-gray-100' },
   ];
 
-  // 根據客戶館別動態過濾按鈕
   const displayedActions = allActions.filter(action => {
-    if (!isMatched) return true; // 未匹配時顯示所有選項供手動處理
+    if (!isMatched) return true;
     if (matchedUser.venue === '民權館') {
       return action.id !== 'at_counter_12';
     }
@@ -206,100 +146,84 @@ ${servicesSection}
   });
 
   return (
-    <div className={`w-full bg-white rounded-[48px] overflow-hidden border border-gray-100 shadow-2xl mb-8 relative animate-in fade-in duration-500 ${isArchived ? 'opacity-90' : ''}`}>
+    <div className={`w-full bg-white rounded-[56px] overflow-hidden border border-gray-100 shadow-2xl mb-10 relative animate-in fade-in duration-700 ${isArchived ? 'opacity-80 scale-[0.98]' : ''}`}>
       
-      {/* 標頭 */}
-      <div className={`px-8 pt-8 pb-6 flex items-center justify-between transition-colors duration-500 ${isArchived ? 'bg-[#4B4B4B] text-white' : isMatched ? 'bg-indigo-600 text-white' : 'bg-red-500 text-white'}`}>
-        <div className="flex items-center space-x-4">
-          <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center font-black text-xl border border-white/20 shadow-inner">
+      <div className={`px-10 pt-10 pb-8 flex items-center justify-between transition-all duration-500 ${isArchived ? 'bg-slate-700 text-white' : isMatched ? 'bg-indigo-600 text-white' : 'bg-rose-500 text-white'}`}>
+        <div className="flex items-center space-x-5">
+          <div className="w-16 h-16 rounded-[22px] bg-white/20 backdrop-blur-md flex items-center justify-center font-black text-2xl border border-white/20 shadow-inner">
             {displayId}
           </div>
           <div className="flex flex-col">
-            <p className="font-black text-lg tracking-tight">
-              {isMatched ? `${matchedUser.company} / ${matchedUser.name}` : '未知收件人 (請手動配對)'}
+            <p className="font-black text-xl tracking-tight leading-none">
+              {isMatched ? `${matchedUser.company} / ${matchedUser.name}` : '未知收件對象'}
             </p>
-            <p className="text-[10px] font-black opacity-70 uppercase tracking-widest mt-0.5">
-              {isArchived ? `已歸檔處理紀錄 (${currentStatus.toUpperCase()})` : canProcess ? '等待處置分流' : `目前狀態：${currentStatus.toUpperCase()}`}
+            <p className="text-[10px] font-black opacity-60 uppercase tracking-[0.2em] mt-2">
+              {isArchived ? `任務已結案 (${currentStatus.toUpperCase()})` : `狀態指示：${currentStatus.toUpperCase()}`}
             </p>
           </div>
         </div>
-        <div className="flex space-x-2">
-          {!isArchived && <button onClick={() => setIsSearching(!isSearching)} className="w-10 h-10 flex items-center justify-center rounded-2xl hover:bg-white/10 transition-all">🔍</button>}
-          <button onClick={onDelete} className="w-10 h-10 flex items-center justify-center rounded-2xl hover:bg-white/10 transition-all text-xl">✕</button>
+        <div className="flex space-x-3">
+          {!isArchived && <button onClick={() => setIsSearching(!isSearching)} className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 transition-all text-xl">🔍</button>}
+          <button onClick={onDelete} className="w-12 h-12 flex items-center justify-center rounded-2xl bg-white/10 hover:bg-white/20 transition-all text-2xl">✕</button>
         </div>
       </div>
 
       {isSearching && (
-        <div className="p-4 bg-gray-50 border-b animate-in slide-in-from-top-4">
-          <input className="w-full p-4 bg-white border border-gray-100 rounded-3xl text-sm font-bold shadow-inner outline-none focus:ring-2 focus:ring-indigo-500" placeholder="搜尋客戶編號、姓名或公司..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-          <div className="mt-3 max-h-48 overflow-y-auto space-y-1 custom-scrollbar">
+        <div className="p-6 bg-slate-50 border-b animate-in slide-in-from-top-6 duration-300">
+          <input className="w-full p-5 bg-white border border-slate-100 rounded-[28px] text-sm font-black shadow-inner outline-none focus:ring-4 focus:ring-indigo-100" placeholder="搜尋取信編號、姓名或公司關鍵字..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+          <div className="mt-4 max-h-56 overflow-y-auto space-y-2 custom-scrollbar pr-2">
             {filteredUsers.map(user => (
-              <div key={user.lineUserId} onClick={() => { onUpdateMatch?.(user); setIsSearching(false); }} className="p-4 bg-white hover:bg-indigo-50 text-xs rounded-2xl cursor-pointer flex justify-between items-center border border-transparent hover:border-indigo-100">
-                <span className="font-black text-gray-700">#{user.customerId} - {user.company} / {user.name}</span>
-                <span className="bg-indigo-600 text-white px-4 py-1.5 rounded-xl font-black text-[9px]">配對</span>
+              <div key={user.lineUserId} onClick={() => { onUpdateMatch?.(user); setIsSearching(false); }} className="p-5 bg-white hover:bg-indigo-50 text-xs rounded-2xl cursor-pointer flex justify-between items-center border border-slate-100 hover:border-indigo-200 transition-all">
+                <span className="font-black text-slate-700">#{user.customerId} - {user.company} / {user.name}</span>
+                <span className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-black text-[10px] uppercase shadow-lg shadow-indigo-100">執行配對</span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      <div className="p-8">
-        <div className="flex flex-col md:flex-row gap-8 mb-10">
+      <div className="p-10">
+        <div className="flex flex-col md:flex-row gap-10 mb-12">
           {imageUrl && (
-            <div className="w-full md:w-56 h-56 bg-gray-100 rounded-[40px] overflow-hidden shadow-2xl flex-shrink-0 border-4 border-white relative group">
-              <img src={imageUrl} className="w-full h-full object-cover" alt="mail" />
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                 <p className="text-white text-[10px] font-black uppercase tracking-widest">可點擊下方複製</p>
-              </div>
+            <div className="w-full md:w-64 h-64 bg-slate-50 rounded-[48px] overflow-hidden shadow-2xl flex-shrink-0 border-[6px] border-white relative group cursor-zoom-in">
+              <img src={imageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-110 duration-700" alt="mail" />
             </div>
           )}
           <div className="flex-1">
-            <div className="p-8 bg-gray-50/50 rounded-[40px] border border-gray-100 text-[13px] text-gray-600 leading-relaxed font-bold whitespace-pre-wrap shadow-inner relative overflow-hidden group">
-              <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500 opacity-20 group-hover:opacity-100 transition-opacity"></div>
+            <div className="p-10 bg-slate-50/70 rounded-[48px] border border-slate-100 text-[14px] text-slate-600 leading-relaxed font-bold whitespace-pre-wrap shadow-inner relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500/30"></div>
               {finalReply}
             </div>
           </div>
         </div>
         
         {!isArchived && (
-          <div className="flex flex-col space-y-3">
+          <div className="flex flex-col space-y-4">
             <button 
               onClick={handleCopyAndForward} 
-              className={`w-full py-6 rounded-[32px] font-black text-sm shadow-2xl transition-all flex items-center justify-center space-x-4 ${isNotified ? 'bg-indigo-50 text-indigo-400 border border-indigo-100' : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:-translate-y-1'}`}
+              className={`w-full py-7 rounded-[35px] font-black text-lg shadow-3xl transition-all flex items-center justify-center space-x-5 ${isNotified ? 'bg-slate-100 text-slate-400 border border-slate-200' : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:-translate-y-1'}`}
             >
-              <span className="text-2xl">{copyStatus === 'copied' ? '✅' : '📲'}</span>
-              <span className="tracking-wide">{copyStatus === 'copied' ? '內容已複製！' : '複製通知並開啟 LINE 發送'}</span>
+              <span className="text-3xl">{copyStatus === 'copied' ? '✅' : '📲'}</span>
+              <span className="tracking-wide">{copyStatus === 'copied' ? '內容已複製到剪貼簿' : '複製內容並開啟 LINE 通知'}</span>
             </button>
-            
-            {imageUrl && (
-              <button 
-                onClick={handleCopyImage}
-                disabled={imgCopyStatus === 'loading'}
-                className={`w-full py-4 rounded-[24px] font-black text-[11px] uppercase tracking-[0.2em] transition-all flex items-center justify-center space-x-3 border-2 ${imgCopyStatus === 'copied' ? 'bg-emerald-50 text-emerald-600 border-emerald-200 shadow-emerald-50' : 'bg-white text-indigo-500 border-indigo-50 hover:bg-indigo-50 shadow-sm'} ${imgCopyStatus === 'loading' ? 'opacity-70 animate-pulse' : ''}`}
-              >
-                <span>{imgCopyStatus === 'copied' ? '✅' : imgCopyStatus === 'loading' ? '⏳' : '📎'}</span>
-                <span>{imgCopyStatus === 'copied' ? '掃描原圖已複製' : imgCopyStatus === 'loading' ? '正在處理圖片格式...' : '附加掃描原圖 (複製圖片附件)'}</span>
-              </button>
-            )}
           </div>
         )}
 
         {canProcess && (
-          <div className="pt-10 border-t border-gray-100 mt-10">
-            <h4 className="text-[11px] font-black text-gray-400 uppercase tracking-[0.3em] mb-6 text-center">任務分流與處置中心</h4>
-            <div className={`grid grid-cols-2 sm:grid-cols-3 ${displayedActions.length > 4 ? 'md:grid-cols-6' : 'md:grid-cols-4'} gap-4`}>
+          <div className="pt-12 border-t border-slate-50 mt-12">
+            <div className="flex flex-col items-center mb-10">
+              <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.4em]">任務分流與處置中心 (V6)</h4>
+              <div className="h-1 w-12 bg-indigo-100 rounded-full mt-2"></div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4">
               {displayedActions.map((action) => (
                 <button 
                   key={action.id}
                   disabled={actionLoading !== null}
-                  onClick={() => handleAction(action.id as MailProcessingStatus, action.label)}
-                  className={`flex flex-col items-center justify-center p-5 rounded-[30px] border-2 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 ${action.color} ${actionLoading === action.id ? 'animate-pulse scale-95 border-indigo-400 bg-white' : ''}`}
+                  onClick={() => handleAction(action.id as MailProcessingStatus)}
+                  className={`flex flex-col items-center justify-center p-6 rounded-[35px] border-2 transition-all hover:scale-105 active:scale-95 disabled:opacity-40 ${action.color} ${actionLoading === action.id ? 'animate-pulse scale-95 border-indigo-500' : ''}`}
                 >
-                  {actionLoading === action.id ? (
-                    <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-2"></div>
-                  ) : (
-                    <span className="text-2xl mb-2">{action.icon}</span>
-                  )}
+                  <span className="text-3xl mb-3">{action.icon}</span>
                   <span className="text-[10px] font-black tracking-tighter uppercase whitespace-nowrap">{action.label}</span>
                 </button>
               ))}
@@ -308,8 +232,8 @@ ${servicesSection}
         )}
 
         <button 
-          onClick={openDashboard}
-          className="w-full mt-8 py-5 bg-white text-gray-400 rounded-[32px] text-[11px] font-black uppercase tracking-widest hover:bg-indigo-50 hover:text-indigo-600 transition-all border-2 border-dashed border-gray-100 shadow-sm"
+          onClick={() => isMatched && onOpenDashboard?.(matchedUser)}
+          className="w-full mt-10 py-6 bg-white text-slate-300 rounded-[35px] text-[11px] font-black uppercase tracking-widest hover:bg-slate-50 hover:text-indigo-600 transition-all border-2 border-dashed border-slate-100"
         >
           查看歷史處置儀表板 ➔
         </button>

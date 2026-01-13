@@ -1,6 +1,6 @@
 {
-  "name": "AI 智能郵務平台 Beta",
-  "description": "專業級 AI 郵務管理系統。提供 OCR 辨識、客戶自動配對、AI 建議 LINE 通知內容生成與完整的郵務活動紀錄庫。",
+  "name": "道騰 AI 郵務 V6.1.2",
+  "description": "專業級 AI 郵務管理系統。提供極速 OCR 辨識、自動客戶匹配與 LINE 通知生成。",
   "requestFramePermissions": [
     "camera"
   ]

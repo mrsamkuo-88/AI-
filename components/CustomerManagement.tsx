@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { MatchedUser, MailLogEntry, MailProcessingStatus } from '../types';
 import CustomerDashboard from './CustomerDashboard';
@@ -81,9 +80,9 @@ const CustomerManagement: React.FC<CustomerManagementProps> = ({ customers, logs
     setIsAdding(false);
   };
 
-  const handleUpdateCustomer = (updatedUser: MatchedUser) => {
+  const handleUpdateCustomer = (updatedUser: MatchedUser, originalCustomerId: string) => {
     const updated = customers.map(c => 
-      c.customerId === updatedUser.customerId ? updatedUser : c
+      c.customerId === originalCustomerId ? updatedUser : c
     );
     onUpdate(updated);
     setSelectedCustomer(updatedUser);
@@ -95,6 +94,12 @@ const CustomerManagement: React.FC<CustomerManagementProps> = ({ customers, logs
       case 'MVP': return 'bg-indigo-100 text-indigo-700 border-indigo-200';
       default: return 'bg-gray-100 text-gray-600 border-gray-200';
     }
+  };
+  
+  const getCategoryIcon = (category?: string) => {
+    if (category === '辦公室') return '🏢';
+    if (category === '工商登記') return '®️';
+    return '';
   };
 
   const toggleTagFilter = (tag: string) => {
@@ -112,6 +117,9 @@ const CustomerManagement: React.FC<CustomerManagementProps> = ({ customers, logs
       ? c.tags?.some(tag => activeTagFilters.includes(tag)) 
       : true;
     return matchesSearch && matchesTag;
+  }).sort((a, b) => {
+    // Sort by customerId naturally (numeric sort)
+    return a.customerId.localeCompare(b.customerId, undefined, { numeric: true, sensitivity: 'base' });
   });
 
   const getHistoryCount = (customerId: string) => {
@@ -125,7 +133,10 @@ const CustomerManagement: React.FC<CustomerManagementProps> = ({ customers, logs
           customer={selectedCustomer}
           logs={logs}
           onUpdateCustomer={handleUpdateCustomer}
-          onDeleteCustomer={onDeleteCustomer}
+          onDeleteCustomer={(id) => {
+            onDeleteCustomer(id);
+            setSelectedCustomer(null); // Ensure dashboard closes after delete
+          }}
           onProcessMail={onProcessMail}
           onClose={() => setSelectedCustomer(null)}
         />
@@ -279,7 +290,8 @@ const CustomerManagement: React.FC<CustomerManagementProps> = ({ customers, logs
               >
                 <div className="flex items-center space-x-4">
                   <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 font-black text-sm shadow-inner relative">
-                    {c.productCategory === '工商登記' ? '#' : ''}{c.customerId}
+                    <span className="mr-0.5 text-xs">{getCategoryIcon(c.productCategory)}</span>
+                    {c.customerId}
                     {c.tags?.includes('VIP') && <div className="absolute -top-1 -right-1 text-[10px]">👑</div>}
                   </div>
                   <div>

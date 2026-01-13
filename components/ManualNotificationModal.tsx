@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { MatchedUser } from '../types';
 
@@ -45,12 +44,10 @@ const ManualNotificationModal: React.FC<ManualNotificationModalProps> = ({ custo
     const isBusinessReg = selectedCustomer.productCategory === '工商登記';
     const isMvpOrVip = isVip || isMvp;
     
-    // Determine Salutation
     let salutation = `${selectedCustomer.name} 您好 👋`;
     if (isVip) salutation = `親愛的道騰尊榮 VIP ${selectedCustomer.name} 您好 👑`;
     else if (isMvp) salutation = `道騰傑出 MVP ${selectedCustomer.name} 您好 ✨`;
 
-    // Item Description based on selection
     let itemLabel = '物品';
     let itemEmoji = '🎁';
     switch (selectedType) {
@@ -60,7 +57,6 @@ const ManualNotificationModal: React.FC<ManualNotificationModalProps> = ({ custo
       case 'other': itemLabel = '物品'; itemEmoji = '🎁'; break;
     }
 
-    // Placement logic
     let placementText = '';
     if (isOffice && selectedType === 'mail') {
       placementText = `今日信件，幫您投遞到您的辦公室信箱內。`;
@@ -68,10 +64,8 @@ const ManualNotificationModal: React.FC<ManualNotificationModalProps> = ({ custo
       placementText = `我們已將您的${itemLabel}放置於您所在樓層的櫃檯（21F/27F），方便您隨時親自前來領取。`;
     }
 
-    // ID line for Business Registration
     const idLine = isBusinessReg ? `\n您的取信編號【#${selectedCustomer.customerId}】` : '';
 
-    // Assisted Services Logic: 這裡同步 NotificationDisplay 的 5 項尊榮服務邏輯
     let servicesSection = '';
     if (isBusinessReg && isMvpOrVip) {
       const tierLabel = isVip ? '尊榮 VIP' : '傑出 MVP';
@@ -89,11 +83,9 @@ const ManualNotificationModal: React.FC<ManualNotificationModalProps> = ({ custo
 協助轉寄${itemLabel}（運費另計，請提供完整收件地址及寄送方式，例如是否急件）
 `;
     } else {
-      // 其他類別客戶的預設結尾
       servicesSection = `\n請直接回覆此訊息告知您的需求，我們將盡快為您處理。`;
     }
 
-    // Main Template - 完全對齊用戶要求的「正確訊息」格式
     const body = `${salutation}，
 
 這裡有一件您的「${itemLabel}」已送達 ${itemEmoji}。
@@ -111,18 +103,22 @@ ${servicesSection}
     try {
       await navigator.clipboard.writeText(previewText);
       setCopyStatus('copied');
-      setTimeout(() => setCopyStatus('idle'), 2000);
-      if (confirm('通知內容已複製！是否開啟 LINE？')) window.location.href = 'https://line.me/R/';
+      setTimeout(() => setCopyStatus('idle'), 2500);
     } catch (err) {
-      alert('複製失敗');
+      alert('複製失敗，請手動選取文字內容');
     }
+  };
+
+  const getCategoryIcon = (category?: string) => {
+    if (category === '辦公室') return '🏢';
+    if (category === '工商登記') return '®️';
+    return '#';
   };
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
       <div className="bg-[#F8F9FE] w-full max-w-xl rounded-[56px] shadow-2xl overflow-hidden flex flex-col border border-white/30 animate-in zoom-in-95">
         
-        {/* Header */}
         <div className="bg-indigo-600 p-8 text-white relative">
           <div className="flex justify-between items-center">
             <div>
@@ -132,7 +128,6 @@ ${servicesSection}
             <button onClick={onClose} className="w-10 h-10 bg-white/10 hover:bg-white/20 rounded-2xl flex items-center justify-center transition-all">✕</button>
           </div>
           
-          {/* Progress Dots */}
           <div className="flex space-x-2 mt-8">
             {[1, 2, 3].map(i => (
               <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${step >= i ? 'w-8 bg-white' : 'w-2 bg-white/20'}`}></div>
@@ -159,7 +154,6 @@ ${servicesSection}
               </div>
               <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
                 {filteredCustomers.map(c => {
-                  const isOffice = c.productCategory === '辦公室';
                   return (
                     <button 
                       key={c.customerId}
@@ -168,7 +162,7 @@ ${servicesSection}
                     >
                       <div className="flex items-center space-x-4">
                         <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600 font-black text-xs">
-                          {isOffice ? '' : '#'}{c.customerId}
+                          {getCategoryIcon(c.productCategory)}{c.customerId}
                         </div>
                         <div className="text-left">
                           <p className="text-sm font-black text-gray-800">{c.name}</p>
@@ -179,9 +173,6 @@ ${servicesSection}
                     </button>
                   );
                 })}
-                {filteredCustomers.length === 0 && (
-                  <p className="text-center py-10 text-gray-300 font-black text-xs uppercase tracking-widest">找不到相符客戶</p>
-                )}
               </div>
             </div>
           )}
@@ -196,7 +187,7 @@ ${servicesSection}
                 <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">👤</div>
                 <div>
                   <p className="text-xs font-black text-indigo-600 uppercase tracking-widest">收件人</p>
-                  <p className="font-bold text-gray-800">{selectedCustomer.productCategory === '辦公室' ? '' : '#'}{selectedCustomer.customerId} - {selectedCustomer.name}</p>
+                  <p className="font-bold text-gray-800">{getCategoryIcon(selectedCustomer.productCategory)}{selectedCustomer.customerId} - {selectedCustomer.name}</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -224,7 +215,7 @@ ${servicesSection}
             <div className="space-y-6 animate-in slide-in-from-right-4">
               <div className="flex items-center space-x-3 mb-2">
                 <div className="w-1.5 h-6 bg-indigo-600 rounded-full"></div>
-                <h3 className="text-xl font-black text-gray-800 tracking-tight">步驟 3：預覽內容</h3>
+                <h3 className="text-xl font-black text-gray-800 tracking-tight">步驟 3：預覽並複製內容</h3>
               </div>
               <div className="relative group">
                 <textarea
@@ -236,10 +227,10 @@ ${servicesSection}
               </div>
               <button
                 onClick={handleCopy}
-                className={`w-full py-6 rounded-[32px] font-black text-sm shadow-2xl transition-all flex items-center justify-center space-x-4 ${copyStatus === 'copied' ? 'bg-indigo-50 text-indigo-400 border border-indigo-100' : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:-translate-y-1'}`}
+                className={`w-full py-6 rounded-[32px] font-black text-sm shadow-2xl transition-all flex items-center justify-center space-x-4 ${copyStatus === 'copied' ? 'bg-emerald-500 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:-translate-y-1'}`}
               >
-                <span className="text-2xl">{copyStatus === 'copied' ? '✅' : '📲'}</span>
-                <span>{copyStatus === 'copied' ? '內容已複製！' : '複製通知並開啟 LINE'}</span>
+                <span className="text-2xl">{copyStatus === 'copied' ? '✅' : '📋'}</span>
+                <span>{copyStatus === 'copied' ? '內容已成功複製！' : '複製通知內容'}</span>
               </button>
               <div className="flex justify-between">
                 <button onClick={() => setStep(2)} className="px-6 py-3 text-[10px] font-black text-gray-400 uppercase tracking-widest hover:text-indigo-600 transition-colors">← 重選品項</button>

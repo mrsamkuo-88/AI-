@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { CustomerMailAnalysis, MatchedUser, MailProcessingStatus } from '../types';
 
@@ -29,7 +28,7 @@ const NotificationDisplay: React.FC<NotificationDisplayProps> = ({
   isArchived = false
 }) => {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
-  const [imgCopyStatus, setImgCopyStatus] = useState<'idle' | 'copied' | 'loading'>('idle');
+  const [imageCopyStatus, setImageCopyStatus] = useState<'idle' | 'processing' | 'copied'>('idle');
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [actionLoading, setActionLoading] = useState<MailProcessingStatus | null>(null);
@@ -37,16 +36,14 @@ const NotificationDisplay: React.FC<NotificationDisplayProps> = ({
   const matchedUser = analysis.matchedUser;
   const isMatched = matchedUser?.status === 'matched';
 
-  // FIX: Added filteredUsers to support searching through customers for manual re-matching
   const filteredUsers = allCustomers.filter(user => 
     user.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     user.company.toLowerCase().includes(searchQuery.toLowerCase()) || 
     user.customerId.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const displayId = isMatched ? matchedUser.customerId : '??';
+  const displayId = isMatched ? matchedUser.customerId : 'N/A';
   
-  // 處理最終文案
   let finalReply = analysis.suggestedReply;
   if (isMatched) {
     const isVip = matchedUser.tags?.includes('VIP');
@@ -99,14 +96,60 @@ ${servicesSection}
 ✨ 道騰 DT Space 智能郵務管家 敬上`;
   }
 
-  const handleCopyAndForward = async () => {
+  const handleCopyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(finalReply);
       setCopyStatus('copied');
-      setTimeout(() => setCopyStatus('idle'), 2000);
       onMarkAsNotified?.('notified');
-      if (confirm('通知內容已複製！是否開啟 LINE？')) window.location.href = 'https://line.me/R/';
-    } catch (err) { alert('複製失敗'); }
+      setTimeout(() => setCopyStatus('idle'), 2500);
+    } catch (err) { 
+      alert('複製失敗，請手動選取文字內容'); 
+    }
+  };
+
+  const handleCopyImageToClipboard = async () => {
+    if (!imageUrl) return;
+    
+    if (!(window as any).ClipboardItem) {
+      alert('您的瀏覽器不支援直接複製圖片功能。\n建議使用 Chrome 或 Safari，或直接長按圖片「拷貝/儲存」後手動傳送。');
+      return;
+    }
+
+    setImageCopyStatus('processing');
+    
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => reject(new Error("圖片加載失敗"));
+        img.src = imageUrl;
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error("無法建立畫布內容");
+      ctx.drawImage(img, 0, 0);
+
+      const pngBlob = await new Promise<Blob | null>(resolve => 
+        canvas.toBlob(resolve, 'image/png')
+      );
+      
+      if (!pngBlob) throw new Error("畫布轉換失敗");
+
+      const data = [new (window as any).ClipboardItem({ [pngBlob.type]: pngBlob })];
+      await navigator.clipboard.write(data);
+      
+      setImageCopyStatus('copied');
+      setTimeout(() => setImageCopyStatus('idle'), 2500);
+    } catch (err: any) {
+      console.error('Clipboard Error:', err);
+      alert('圖片複製失敗！\n原因：' + (err.message || '瀏覽器安全限制') + '\n\n解決方案：請長按上方郵件照片，選擇「拷貝」或「儲存」後再至 LINE 貼上。');
+      setImageCopyStatus('idle');
+    }
   };
 
   const handleAction = async (status: MailProcessingStatus) => {
@@ -123,7 +166,6 @@ ${servicesSection}
 
   const canProcess = (currentStatus === 'pending' || currentStatus === 'notified') && !isArchived;
 
-  // 定義所有處置按鈕
   const allActions = [
     { id: 'scanned', label: '數位掃描', icon: '📧', color: 'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100' },
     { id: 'move_to_1f', label: '1F 轉交', icon: '🚚', color: 'bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-100' },
@@ -187,6 +229,9 @@ ${servicesSection}
           {imageUrl && (
             <div className="w-full md:w-64 h-64 bg-slate-50 rounded-[48px] overflow-hidden shadow-2xl flex-shrink-0 border-[6px] border-white relative group cursor-zoom-in">
               <img src={imageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-110 duration-700" alt="mail" />
+              <div className="absolute top-4 right-4 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-xl text-[8px] font-black text-white uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+                Original Scan
+              </div>
             </div>
           )}
           <div className="flex-1">
@@ -200,19 +245,43 @@ ${servicesSection}
         {!isArchived && (
           <div className="flex flex-col space-y-4">
             <button 
-              onClick={handleCopyAndForward} 
-              className={`w-full py-7 rounded-[35px] font-black text-lg shadow-3xl transition-all flex items-center justify-center space-x-5 ${isNotified ? 'bg-slate-100 text-slate-400 border border-slate-200' : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:-translate-y-1'}`}
+              onClick={handleCopyToClipboard} 
+              className={`w-full py-7 rounded-[35px] font-black text-lg shadow-3xl transition-all flex items-center justify-center space-x-5 ${copyStatus === 'copied' ? 'bg-emerald-500 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:-translate-y-1'}`}
             >
-              <span className="text-3xl">{copyStatus === 'copied' ? '✅' : '📲'}</span>
-              <span className="tracking-wide">{copyStatus === 'copied' ? '內容已複製到剪貼簿' : '複製內容並開啟 LINE 通知'}</span>
+              <span className="text-3xl">{copyStatus === 'copied' ? '✅' : '📋'}</span>
+              <span className="tracking-wide">{copyStatus === 'copied' ? '內容已成功複製！' : '複製 AI 建議通知內容'}</span>
             </button>
+            
+            {imageUrl && (
+              <button 
+                onClick={handleCopyImageToClipboard} 
+                disabled={imageCopyStatus === 'processing'}
+                className={`w-full py-5 rounded-[30px] font-black text-sm border-2 transition-all flex items-center justify-center space-x-4 ${
+                  imageCopyStatus === 'copied' ? 'bg-emerald-50 text-emerald-600 border-emerald-200 shadow-lg' : 
+                  imageCopyStatus === 'processing' ? 'bg-slate-50 text-slate-400 border-slate-100' :
+                  'bg-white text-indigo-600 border-indigo-100 hover:bg-indigo-50 active:scale-95 shadow-md'
+                }`}
+              >
+                <span className={`text-2xl ${imageCopyStatus === 'processing' ? 'animate-spin' : ''}`}>
+                  {imageCopyStatus === 'copied' ? '✨' : imageCopyStatus === 'processing' ? '⏳' : '🖼️'}
+                </span>
+                <span className="tracking-widest uppercase">
+                  {imageCopyStatus === 'copied' ? '郵件照片已成功複製！' : 
+                   imageCopyStatus === 'processing' ? '正在處理圖片中...' : '複製圖片檔給客戶'}
+                </span>
+              </button>
+            )}
+            
+            <p className="text-[10px] text-center text-gray-400 font-bold uppercase tracking-widest mt-2">
+              {imageCopyStatus === 'copied' ? '提示：圖片已存入剪貼簿，可直接至 LINE 貼上' : '點擊上方按鈕後，請自行至 LINE 聊天室貼上發送'}
+            </p>
           </div>
         )}
 
         {canProcess && (
           <div className="pt-12 border-t border-slate-50 mt-12">
             <div className="flex flex-col items-center mb-10">
-              <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.4em]">任務分流與處置中心 (V6)</h4>
+              <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.4em]">任務分流與處置中心</h4>
               <div className="h-1 w-12 bg-indigo-100 rounded-full mt-2"></div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-4">

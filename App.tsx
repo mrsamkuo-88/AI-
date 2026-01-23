@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { processImageForMail } from './services/geminiService';
-import { GeminiServiceResponse, MatchedUser, MailLogEntry, MailProcessingStatus, MailTemplate } from './types';
+import { GeminiServiceResponse, MatchedUser, MailLogEntry, MailProcessingStatus } from './types';
 import ImageUploader from './components/ImageUploader';
 import NotificationDisplay from './components/NotificationDisplay';
 import CustomerManagement from './components/CustomerManagement';
@@ -10,11 +10,10 @@ import CustomerDashboard from './components/CustomerDashboard';
 import ManualNotificationModal from './components/ManualNotificationModal';
 import SystemSettingsModal, { RestorePayload } from './components/SystemSettingsModal';
 import { storage } from './services/storageService';
-import { LIFF_ID, MOCK_CUSTOMER_DB, DEFAULT_TEMPLATES } from './constants';
+import { LIFF_ID, MOCK_CUSTOMER_DB } from './constants';
 
 const DB_KEY = 'AI_MAIL_ASSISTANT_CRM_V5';
 const LOG_KEY = 'AI_MAIL_ACTIVITY_LOG_V5';
-const TPL_KEY = 'AI_MAIL_TEMPLATES_V1';
 const VENUE_KEY = 'AI_MAIL_CURRENT_VENUE';
 const AUTH_KEY = 'AI_MAIL_SESSION_AUTH';
 
@@ -62,7 +61,6 @@ const App: React.FC = () => {
 
   const [mailLogs, setMailLogs] = useState<MailLogEntry[]>([]);
   const [customers, setCustomers] = useState<MatchedUser[]>([]);
-  const [templates, setTemplates] = useState<MailTemplate[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 });
   const [activeTab, setActiveTab] = useState<'scan' | 'delivery' | 'crm'>('scan');
@@ -70,8 +68,6 @@ const App: React.FC = () => {
   const [isManualNotifyOpen, setIsManualNotifyOpen] = useState(false);
   const [isSystemSettingsOpen, setIsSystemSettingsOpen] = useState(false);
   const [isStorageReady, setIsStorageReady] = useState(false);
-  
-  const isCloudEnabled = localStorage.getItem('CLOUD_SYNC_ENABLED') === 'true';
 
   useEffect(() => {
     const initAppData = async () => {
@@ -81,11 +77,9 @@ const App: React.FC = () => {
 
         let savedCrm = await storage.get<MatchedUser[]>(DB_KEY);
         let savedLogs = await storage.get<MailLogEntry[]>(LOG_KEY);
-        let savedTpls = await storage.get<MailTemplate[]>(TPL_KEY);
 
         setCustomers(savedCrm || MOCK_CUSTOMER_DB);
         setMailLogs(savedLogs || []);
-        setTemplates(savedTpls || DEFAULT_TEMPLATES);
         setIsStorageReady(true);
         
         if ((window as any).liff) {
@@ -110,47 +104,52 @@ const App: React.FC = () => {
     }
   };
 
+  /**
+   * 優化後的流式掃描機制：
+   * 不等待全部完成，每完成一張就立即更新介面與存儲。
+   */
   const handleImageScan = async (files: File[]) => {
     setIsProcessing(true);
     setProcessingProgress({ current: 0, total: files.length });
     
     let completedCount = 0;
-
-    const processingPromises = files.map(async (file) => {
+    
+    // 建立一個並行任務處理器
+    const processFile = async (file: File) => {
       try {
         const { base64, mimeType } = await optimizeImageForMobile(file);
-        const result = await processImageForMail(base64, mimeType, currentVenue, templates);
+        const result = await processImageForMail(base64, mimeType, currentVenue);
         
-        completedCount++;
-        setProcessingProgress({ current: completedCount, total: files.length });
-
         if (result.analysis) {
-          return {
+          const newEntry: MailLogEntry = {
             id: Math.random().toString(36).substr(2, 9),
             timestamp: new Date().toISOString(),
             analysis: result.analysis,
             imageUrl: `data:${mimeType};base64,${base64}`,
             isNotified: false,
-            processingStatus: 'pending' as const,
+            processingStatus: 'pending',
             isArchived: false
-          } as MailLogEntry;
+          };
+
+          // 關鍵點：即時更新狀態，不等待 Promise.all
+          setMailLogs(prev => {
+            const updated = [newEntry, ...prev];
+            // 同步寫入數據庫確保不遺失
+            storage.set(LOG_KEY, updated);
+            return updated;
+          });
         }
-      } catch (e: any) {
-        console.error("並行辨識錯誤:", e);
+      } catch (e) {
+        console.error("辨識單張圖片失敗:", e);
+      } finally {
         completedCount++;
-        setProcessingProgress({ current: completedCount, total: files.length });
+        setProcessingProgress(p => ({ ...p, current: completedCount }));
       }
-      return null;
-    });
+    };
 
-    const results = await Promise.all(processingPromises);
-    const newEntries = results.filter((entry): entry is MailLogEntry => entry !== null);
+    // 同時啟動所有任務，瀏覽器會自動調度網路請求與記憶體
+    await Promise.all(files.map(file => processFile(file)));
 
-    if (newEntries.length > 0) {
-      const updated = [...newEntries, ...mailLogs];
-      setMailLogs(updated);
-      await storage.set(LOG_KEY, updated);
-    }
     setIsProcessing(false);
   };
 
@@ -164,9 +163,26 @@ const App: React.FC = () => {
     await storage.set(DB_KEY, newCustomers);
   };
 
-  const handleUpdateTemplates = async (newTpls: MailTemplate[]) => {
-    setTemplates(newTpls);
-    await storage.set(TPL_KEY, newTpls);
+  const handleSystemRestore = async (restorePayload: RestorePayload) => {
+    try {
+      const { restoreCustomers, restoreLogs, restoreConfig, data } = restorePayload;
+      if (restoreCustomers && Array.isArray(data.customers)) {
+        await storage.set(DB_KEY, data.customers);
+        setCustomers(data.customers);
+      }
+      if (restoreLogs && Array.isArray(data.mailLogs)) {
+        await storage.set(LOG_KEY, data.mailLogs);
+        setMailLogs(data.mailLogs);
+      }
+      if (restoreConfig && data.appConfig && data.appConfig.venue) {
+        localStorage.setItem(VENUE_KEY, JSON.stringify(data.appConfig.venue));
+        setCurrentVenue(data.appConfig.venue);
+      }
+      alert("🎉 資料還原成功！");
+      setIsSystemSettingsOpen(false);
+    } catch(e: any) {
+      alert("還原錯誤：" + e.message);
+    }
   };
 
   if (!isLoggedIn) {
@@ -203,16 +219,18 @@ const App: React.FC = () => {
           <div className="flex flex-col">
             <h1 className="text-xl font-black text-white tracking-tight leading-none flex items-center gap-2">
               道騰 AI 郵務 
-              <span className="bg-white/10 px-2 py-0.5 rounded-md text-[8px] font-black uppercase text-indigo-300">V6.1.5</span>
+              <span className="bg-white/10 px-2 py-0.5 rounded-md text-[8px] font-black uppercase text-indigo-300">V6.1.5 SYNC</span>
             </h1>
             <div className="flex items-center gap-1.5 mt-1">
-              <button onClick={() => setIsSystemSettingsOpen(true)} className="text-[10px] text-gray-400 font-black uppercase tracking-widest hover:text-white transition-colors">{currentVenue.name} ⚙️</button>
+              <button onClick={() => setIsSystemSettingsOpen(true)} className="text-[10px] text-gray-400 font-black uppercase tracking-widest hover:text-white transition-colors cursor-pointer">{currentVenue.name} ⚙️</button>
+              <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse"></div>
+              <span className="text-[8px] font-black uppercase tracking-widest text-emerald-400">Parallel Scanning Enabled</span>
             </div>
           </div>
         </div>
         <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
           {VENUES.map(v => (
-            <button key={v.name} onClick={() => { setCurrentVenue(v); localStorage.setItem(VENUE_KEY, JSON.stringify(v)); }} className={`px-4 py-2 text-[10px] font-black rounded-xl transition-all ${currentVenue.name === v.name ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400'}`}>{v.name}</button>
+            <button key={v.name} onClick={() => { setCurrentVenue(v); localStorage.setItem(VENUE_KEY, JSON.stringify(v)); }} className={`px-4 py-2 text-[10px] font-black rounded-xl transition-all cursor-pointer ${currentVenue.name === v.name ? 'bg-indigo-600 text-white shadow-lg' : 'text-gray-400'}`}>{v.name}</button>
           ))}
         </div>
       </header>
@@ -221,15 +239,26 @@ const App: React.FC = () => {
         {activeTab === 'scan' && (
           <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6">
             <ImageUploader onImagesSelect={handleImageScan} onOpenManualNotification={() => setIsManualNotifyOpen(true)} />
+            
+            {/* 更動態的進度條顯示 */}
             {isProcessing && (
-              <div className="bg-indigo-600 p-12 rounded-[56px] text-center text-white shadow-3xl border-4 border-indigo-500 animate-in zoom-in">
-                <div className="w-16 h-16 border-8 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-8"></div>
-                <h3 className="font-black text-2xl mb-2">AI 並行辨識中...</h3>
-                <p className="text-white/60 text-xs font-black uppercase tracking-[0.3em]">目前進度：{processingProgress.current} / {processingProgress.total}</p>
+              <div className="bg-white p-8 rounded-[45px] shadow-3xl border border-indigo-50 animate-in zoom-in">
+                <div className="flex justify-between items-center mb-4">
+                   <h3 className="font-black text-gray-800 text-lg">AI 流式辨識中...</h3>
+                   <span className="text-indigo-600 font-black text-sm">{Math.round((processingProgress.current / processingProgress.total) * 100)}%</span>
+                </div>
+                <div className="w-full h-4 bg-gray-100 rounded-full overflow-hidden mb-4 shadow-inner">
+                  <div 
+                    className="h-full bg-indigo-600 transition-all duration-500 ease-out"
+                    style={{ width: `${(processingProgress.current / processingProgress.total) * 100}%` }}
+                  ></div>
+                </div>
+                <p className="text-gray-400 text-[10px] font-black uppercase tracking-[0.2em] text-center">已完成：{processingProgress.current} / {processingProgress.total}</p>
               </div>
             )}
+
             <div className="space-y-8">
-              <h3 className="text-2xl font-black text-gray-900 px-4">待處理項目 ({pendingLogs.length})</h3>
+              <h3 className="text-2xl font-black text-gray-900 px-4">最近辨識項目 ({pendingLogs.length})</h3>
               {pendingLogs.map(log => (
                 <NotificationDisplay 
                   key={log.id} analysis={log.analysis} ocrText="" imageUrl={log.imageUrl} allCustomers={customers} isNotified={log.isNotified} currentStatus={log.processingStatus} isArchived={log.isArchived}
@@ -239,6 +268,12 @@ const App: React.FC = () => {
                   onOpenDashboard={setGlobalSelectedCustomer}
                 />
               ))}
+              {pendingLogs.length === 0 && !isProcessing && (
+                <div className="py-24 text-center opacity-20 grayscale">
+                  <span className="text-8xl block mb-6">📭</span>
+                  <p className="font-black text-sm uppercase tracking-[0.5em]">目前暫無待處理項目</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -258,7 +293,7 @@ const App: React.FC = () => {
           { id: 'delivery', label: '任務中心', icon: '🚚' },
           { id: 'crm', label: '資料庫', icon: '👥' },
         ].map((tab) => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex flex-col items-center px-8 py-4 rounded-[35px] transition-all duration-500 ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-2xl' : 'text-gray-400 hover:bg-gray-100'}`}>
+          <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex flex-col items-center px-8 py-4 rounded-[35px] transition-all duration-500 cursor-pointer ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-2xl' : 'text-gray-400 hover:bg-gray-100'}`}>
             <span className="text-2xl mb-1.5">{tab.icon}</span>
             <span className="text-[10px] font-black uppercase tracking-widest tracking-[0.2em]">{tab.label}</span>
           </button>
@@ -277,8 +312,7 @@ const App: React.FC = () => {
       {isSystemSettingsOpen && (
         <SystemSettingsModal 
           customers={customers} mailLogs={mailLogs} scheduledMails={[]} currentVenue={currentVenue} viewMode="staff"
-          templates={templates} onUpdateTemplates={handleUpdateTemplates}
-          onRestore={() => {}} onClose={() => setIsSystemSettingsOpen(false)}
+          onRestore={handleSystemRestore} onClose={() => setIsSystemSettingsOpen(false)}
         />
       )}
     </div>

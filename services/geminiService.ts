@@ -1,34 +1,45 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { GeminiServiceResponse, MatchedUser, MailTemplate } from "../types";
+import { GeminiServiceResponse, MatchedUser } from "../types";
 import { GEMINI_MODEL, MOCK_CUSTOMER_DB } from "../constants";
 
+/**
+ * 核心辨識邏輯：不要求使用者選取 Key，直接使用後端配置
+ */
 export async function processImageForMail(
   base64Image: string,
   mimeType: string,
-  venueInfo: { name: string; floor: string },
-  templates: MailTemplate[]
+  venueInfo: { name: string; floor: string }
 ): Promise<GeminiServiceResponse> {
+  // 嚴格遵守規範：直接使用系統注入的 API_KEY
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-  // 將模板格式化為 AI 容易理解的指令
-  const templateInstructions = templates.map(t => 
-    `等級 ${t.id} 的格式：\n${t.content}`
-  ).join('\n\n');
-
   const systemInstruction = `你是一位專業的 AI 郵務秘書，服務於「道騰DT Space」。
-你的任務是從郵件照片中提取資訊，並根據收件人的等級選擇正確的模板生成 LINE 通知。
+你的任務是從郵件照片中提取資訊，並生成符合道騰品牌標準的專業 LINE 通知。
 
-【可用模板與變數說明】
-系統提供以下模板，其中的 {{變數}} 必須被實際內容替換：
-${templateInstructions}
+【訊息生成規範】
+1. 格式必須完全按照以下結構：
+   [客戶姓名] 先生/小姐您好 👋，
 
-【操作規則】
-1. 提取收件人姓名、公司、寄件者、郵件類型（信件/包裹/重要文件）。
-2. 如果找到匹配客戶，根據其標籤（VIP/MVP/Basic）套用對應模板。
-3. 替換模板中的所有變數。
-4. 輸出必須為繁體中文 JSON。
-5. 語氣必須溫和、專業。`;
+   這裡有一封您的重要郵件通知 📩。這封信件來自「[寄件單位]」，信封上標註為 [重要文件/一般郵件]。
+
+   今日信件，幫您放置 『[放置地點]』。
+
+   您的取信編號【#[取信編號]】
+   再麻煩您到 『[放置地點]』 時，跟櫃台人員說編號取信。
+
+   ---
+   💡 如不便前來，我們也提供以下服務：
+   1️⃣ 郵件掃描電子檔 (E-mail傳送)
+   2️⃣ 郵件直接丟棄 (碎紙處理)
+   3️⃣ 月底統一彙總寄送 (運費另計)
+   請直接回覆此訊息告知您的需求。
+
+   祝您有個美好的一天！
+   ✨ 道騰DT Space 智能郵務管家 敬上
+
+2. 輸出必須為繁體中文 JSON。
+3. 語氣必須溫和、專業。`;
 
   const responseSchema = {
     type: Type.OBJECT,
@@ -57,7 +68,7 @@ ${templateInstructions}
       contents: {
         parts: [
           { inlineData: { mimeType, data: base64Image } },
-          { text: `辨識照片中的收件人。館別：${venueInfo.name}，預設放置：${venueInfo.floor}。` }
+          { text: `辨識照片中的收件人與寄件者。館別：${venueInfo.name}，預設放置：${venueInfo.floor}。` }
         ]
       },
       config: {
@@ -70,40 +81,36 @@ ${templateInstructions}
 
     const result = JSON.parse(response.text.trim());
     
-    // 客戶自動匹配 logic (維持原有機制)
+    // 客戶自動匹配 logic
     const DB_KEY = 'AI_MAIL_ASSISTANT_CRM_V5';
     const savedCustomers = localStorage.getItem(DB_KEY);
     const activeDb = savedCustomers ? JSON.parse(savedCustomers) : MOCK_CUSTOMER_DB;
 
     const rawName = result.analysis.customerName || "";
+    // 簡易名稱模糊比對
     let bestMatch = activeDb.find((c: MatchedUser) => 
       rawName.includes(c.name) || c.name.includes(rawName) || (c.company && rawName.includes(c.company))
     );
 
     if (bestMatch) {
       result.analysis.matchedUser = { ...bestMatch, status: 'matched', confidence: 0.95 };
-      // 二次替換（防止 AI 漏掉變數）
       result.analysis.suggestedReply = result.analysis.suggestedReply
-        .replace(/{{取信編號}}/g, bestMatch.customerId)
-        .replace(/{{客戶姓名}}/g, bestMatch.name)
-        .replace(/{{公司名稱}}/g, bestMatch.company)
-        .replace(/{{放置地點}}/g, bestMatch.preferredFloor || venueInfo.floor)
-        .replace(/{{寄件單位}}/g, result.analysis.senderName || "未知單位");
+        .replace(/\[取信編號\]/g, bestMatch.customerId)
+        .replace(/\[客戶姓名\]/g, bestMatch.name)
+        .replace(/\[放置地點\]/g, bestMatch.preferredFloor || venueInfo.floor);
     } else {
       result.analysis.matchedUser = {
         customerId: '待查', lineUserId: '', name: rawName, company: '', avatar: '', status: 'not_found', confidence: 0, isLinked: false
       };
-      // 套用未知收件人模板
-      const unknownTpl = templates.find(t => t.id === 'Unknown') || templates[0];
-      result.analysis.suggestedReply = unknownTpl.content
-        .replace(/{{客戶姓名}}/g, rawName)
-        .replace(/{{放置地點}}/g, venueInfo.floor)
-        .replace(/{{郵件類型}}/g, result.analysis.summary || "郵件");
+      result.analysis.suggestedReply = result.analysis.suggestedReply
+        .replace(/\[取信編號\]/g, '??')
+        .replace(/\[客戶姓名\]/g, rawName)
+        .replace(/\[放置地點\]/g, venueInfo.floor);
     }
 
     return result as GeminiServiceResponse;
   } catch (error: any) {
     console.error("Gemini OCR Error:", error);
-    throw new Error("辨識引擎暫時無法服務。");
+    throw new Error("辨識引擎暫時無法服務，請確認網路連線或稍後再試。");
   }
 }

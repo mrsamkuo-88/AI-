@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { processImageForMail } from './services/geminiService';
-import { GeminiServiceResponse, MatchedUser, MailLogEntry, MailProcessingStatus } from './types';
+import { GeminiServiceResponse, MatchedUser, MailLogEntry, MailProcessingStatus, MailTemplate } from './types';
 import ImageUploader from './components/ImageUploader';
 import NotificationDisplay from './components/NotificationDisplay';
 import CustomerManagement from './components/CustomerManagement';
@@ -8,10 +9,12 @@ import UnifiedTaskDashboard from './components/DeliveryManagement';
 import CustomerDashboard from './components/CustomerDashboard';
 import ManualNotificationModal from './components/ManualNotificationModal';
 import SystemSettingsModal, { RestorePayload } from './components/SystemSettingsModal';
-import { LIFF_ID, MOCK_CUSTOMER_DB } from './constants';
+import { storage } from './services/storageService';
+import { LIFF_ID, MOCK_CUSTOMER_DB, DEFAULT_TEMPLATES } from './constants';
 
 const DB_KEY = 'AI_MAIL_ASSISTANT_CRM_V5';
 const LOG_KEY = 'AI_MAIL_ACTIVITY_LOG_V5';
+const TPL_KEY = 'AI_MAIL_TEMPLATES_V1';
 const VENUE_KEY = 'AI_MAIL_CURRENT_VENUE';
 const AUTH_KEY = 'AI_MAIL_SESSION_AUTH';
 
@@ -55,29 +58,45 @@ const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => sessionStorage.getItem(AUTH_KEY) === 'true');
   const [loginInput, setLoginInput] = useState('');
   const [loginError, setLoginError] = useState(false);
-  const [currentVenue, setCurrentVenue] = useState(() => {
-    const saved = localStorage.getItem(VENUE_KEY);
-    return saved ? JSON.parse(saved) : VENUES[0];
-  });
+  const [currentVenue, setCurrentVenue] = useState(VENUES[0]);
 
   const [mailLogs, setMailLogs] = useState<MailLogEntry[]>([]);
   const [customers, setCustomers] = useState<MatchedUser[]>([]);
+  const [templates, setTemplates] = useState<MailTemplate[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 });
   const [activeTab, setActiveTab] = useState<'scan' | 'delivery' | 'crm'>('scan');
   const [globalSelectedCustomer, setGlobalSelectedCustomer] = useState<MatchedUser | null>(null);
   const [isManualNotifyOpen, setIsManualNotifyOpen] = useState(false);
   const [isSystemSettingsOpen, setIsSystemSettingsOpen] = useState(false);
+  const [isStorageReady, setIsStorageReady] = useState(false);
+  
+  const isCloudEnabled = localStorage.getItem('CLOUD_SYNC_ENABLED') === 'true';
 
   useEffect(() => {
-    const savedCrm = localStorage.getItem(DB_KEY);
-    setCustomers(savedCrm ? JSON.parse(savedCrm) : MOCK_CUSTOMER_DB);
-    const savedLogs = localStorage.getItem(LOG_KEY);
-    if (savedLogs) setMailLogs(JSON.parse(savedLogs));
-    
-    if ((window as any).liff) {
-      (window as any).liff.init({ liffId: LIFF_ID }).catch(() => console.warn("LIFF Ready"));
-    }
+    const initAppData = async () => {
+      try {
+        const savedVenue = localStorage.getItem(VENUE_KEY);
+        if (savedVenue) setCurrentVenue(JSON.parse(savedVenue));
+
+        let savedCrm = await storage.get<MatchedUser[]>(DB_KEY);
+        let savedLogs = await storage.get<MailLogEntry[]>(LOG_KEY);
+        let savedTpls = await storage.get<MailTemplate[]>(TPL_KEY);
+
+        setCustomers(savedCrm || MOCK_CUSTOMER_DB);
+        setMailLogs(savedLogs || []);
+        setTemplates(savedTpls || DEFAULT_TEMPLATES);
+        setIsStorageReady(true);
+        
+        if ((window as any).liff) {
+          (window as any).liff.init({ liffId: LIFF_ID }).catch(() => console.warn("LIFF Ready"));
+        }
+      } catch (err) {
+        console.error("Storage Init Error:", err);
+        setIsStorageReady(true);
+      }
+    };
+    initAppData();
   }, []);
 
   const handleLogin = () => {
@@ -94,68 +113,60 @@ const App: React.FC = () => {
   const handleImageScan = async (files: File[]) => {
     setIsProcessing(true);
     setProcessingProgress({ current: 0, total: files.length });
-    const newEntries: MailLogEntry[] = [];
     
-    for (let i = 0; i < files.length; i++) {
+    let completedCount = 0;
+
+    const processingPromises = files.map(async (file) => {
       try {
-        const { base64, mimeType } = await optimizeImageForMobile(files[i]);
-        const result = await processImageForMail(base64, mimeType, currentVenue);
+        const { base64, mimeType } = await optimizeImageForMobile(file);
+        const result = await processImageForMail(base64, mimeType, currentVenue, templates);
+        
+        completedCount++;
+        setProcessingProgress({ current: completedCount, total: files.length });
+
         if (result.analysis) {
-          newEntries.push({
+          return {
             id: Math.random().toString(36).substr(2, 9),
             timestamp: new Date().toISOString(),
             analysis: result.analysis,
             imageUrl: `data:${mimeType};base64,${base64}`,
             isNotified: false,
-            processingStatus: 'pending',
+            processingStatus: 'pending' as const,
             isArchived: false
-          });
+          } as MailLogEntry;
         }
-      } catch (e: any) { console.error(e); }
-      setProcessingProgress({ current: i + 1, total: files.length });
-    }
+      } catch (e: any) {
+        console.error("並行辨識錯誤:", e);
+        completedCount++;
+        setProcessingProgress({ current: completedCount, total: files.length });
+      }
+      return null;
+    });
+
+    const results = await Promise.all(processingPromises);
+    const newEntries = results.filter((entry): entry is MailLogEntry => entry !== null);
 
     if (newEntries.length > 0) {
       const updated = [...newEntries, ...mailLogs];
       setMailLogs(updated);
-      localStorage.setItem(LOG_KEY, JSON.stringify(updated));
+      await storage.set(LOG_KEY, updated);
     }
     setIsProcessing(false);
   };
 
-  const handleSystemRestore = (restorePayload: RestorePayload) => {
-    try {
-      console.log("Executing Smart Restore...", restorePayload);
-      
-      const { restoreCustomers, restoreLogs, restoreConfig, data } = restorePayload;
-      
-      // Update State directly to avoid reload page error
-      if (restoreCustomers && Array.isArray(data.customers)) {
-        localStorage.setItem(DB_KEY, JSON.stringify(data.customers));
-        setCustomers(data.customers);
-      }
-      
-      if (restoreLogs && Array.isArray(data.mailLogs)) {
-        localStorage.setItem(LOG_KEY, JSON.stringify(data.mailLogs));
-        setMailLogs(data.mailLogs);
-      }
-      
-      if (restoreConfig && data.appConfig && data.appConfig.venue) {
-        localStorage.setItem(VENUE_KEY, JSON.stringify(data.appConfig.venue));
-        setCurrentVenue(data.appConfig.venue);
-      }
+  const handleUpdateLogs = async (newLogs: MailLogEntry[]) => {
+    setMailLogs(newLogs);
+    await storage.set(LOG_KEY, newLogs);
+  };
 
-      alert("🎉 資料還原成功！已載入最新備份資料。");
-      setIsSystemSettingsOpen(false);
+  const handleUpdateCustomers = async (newCustomers: MatchedUser[]) => {
+    setCustomers(newCustomers);
+    await storage.set(DB_KEY, newCustomers);
+  };
 
-    } catch(e: any) {
-      console.error("Restore failed", e);
-      if (e.name === 'QuotaExceededError' || e.code === 22) {
-         alert("錯誤：儲存空間不足 (LocalStorage Quota Exceeded)。無法還原所有資料。");
-      } else {
-         alert("資料還原過程發生未預期的錯誤：" + e.message);
-      }
-    }
+  const handleUpdateTemplates = async (newTpls: MailTemplate[]) => {
+    setTemplates(newTpls);
+    await storage.set(TPL_KEY, newTpls);
   };
 
   if (!isLoggedIn) {
@@ -169,26 +180,34 @@ const App: React.FC = () => {
           </div>
           <input 
             type="password" autoFocus
-            className="w-full py-6 bg-black/20 border-2 border-transparent focus:border-indigo-500 rounded-[30px] text-center text-4xl font-black tracking-[0.5em] text-white outline-none transition-all shadow-inner"
+            className="w-full py-6 bg-black/20 border-2 border-transparent focus:border-indigo-500 rounded-[30px] text-center text-4xl font-black tracking-[0.5em] text-white outline-none transition-all"
             placeholder="••••" value={loginInput} onChange={e => setLoginInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleLogin()}
           />
-          <button onClick={handleLogin} className="w-full py-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-[30px] font-black text-lg mt-8 shadow-xl active:scale-95 transition-all">驗證進入</button>
+          <button onClick={handleLogin} className="w-full py-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-[30px] font-black text-lg mt-8 shadow-xl">驗證進入</button>
         </div>
       </div>
     );
   }
 
   const pendingLogs = mailLogs.filter(log => !log.isArchived && (log.processingStatus === 'pending' || log.processingStatus === 'notified'));
+  if (!isStorageReady) return <div className="min-h-screen bg-[#F0F2F5] flex items-center justify-center font-black">資料載入中...</div>;
 
   return (
     <div className="flex flex-col min-h-screen w-full max-w-2xl mx-auto bg-[#F0F2F5] shadow-2xl overflow-hidden relative font-sans">
-      <header className="bg-[#1E293B] px-6 py-5 flex justify-between items-center sticky top-0 z-50 shadow-xl">
+      <header className="bg-[#1E293B] px-6 py-5 flex justify-between items-center sticky top-0 z-50 shadow-xl border-b border-white/5">
         <div className="flex items-center space-x-4">
-          <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white text-2xl shadow-lg">✉️</div>
+          <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white text-2xl shadow-lg relative">
+            ✉️
+          </div>
           <div className="flex flex-col">
-            <h1 className="text-xl font-black text-white tracking-tight leading-none">道騰 AI 郵務 <span className="text-emerald-400 text-xs ml-1">V6.1.2</span></h1>
-            <button onClick={() => setIsSystemSettingsOpen(true)} className="text-[10px] text-gray-400 font-black uppercase tracking-widest hover:text-white transition-colors mt-1.5">{currentVenue.name} ⚙️</button>
+            <h1 className="text-xl font-black text-white tracking-tight leading-none flex items-center gap-2">
+              道騰 AI 郵務 
+              <span className="bg-white/10 px-2 py-0.5 rounded-md text-[8px] font-black uppercase text-indigo-300">V6.1.5</span>
+            </h1>
+            <div className="flex items-center gap-1.5 mt-1">
+              <button onClick={() => setIsSystemSettingsOpen(true)} className="text-[10px] text-gray-400 font-black uppercase tracking-widest hover:text-white transition-colors">{currentVenue.name} ⚙️</button>
+            </div>
           </div>
         </div>
         <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
@@ -202,81 +221,33 @@ const App: React.FC = () => {
         {activeTab === 'scan' && (
           <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6">
             <ImageUploader onImagesSelect={handleImageScan} onOpenManualNotification={() => setIsManualNotifyOpen(true)} />
-            
             {isProcessing && (
               <div className="bg-indigo-600 p-12 rounded-[56px] text-center text-white shadow-3xl border-4 border-indigo-500 animate-in zoom-in">
                 <div className="w-16 h-16 border-8 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-8"></div>
-                <h3 className="font-black text-2xl mb-2">AI 深度辨識中...</h3>
+                <h3 className="font-black text-2xl mb-2">AI 並行辨識中...</h3>
                 <p className="text-white/60 text-xs font-black uppercase tracking-[0.3em]">目前進度：{processingProgress.current} / {processingProgress.total}</p>
               </div>
             )}
-
             <div className="space-y-8">
               <h3 className="text-2xl font-black text-gray-900 px-4">待處理項目 ({pendingLogs.length})</h3>
               {pendingLogs.map(log => (
                 <NotificationDisplay 
-                  key={log.id} 
-                  analysis={log.analysis} 
-                  ocrText="" 
-                  imageUrl={log.imageUrl} 
-                  allCustomers={customers} 
-                  isNotified={log.isNotified} 
-                  currentStatus={log.processingStatus} 
-                  isArchived={log.isArchived}
-                  onDelete={() => {
-                    const updated = mailLogs.filter(l => l.id !== log.id);
-                    setMailLogs(updated);
-                    localStorage.setItem(LOG_KEY, JSON.stringify(updated));
-                  }}
-                  onMarkAsNotified={(status) => {
-                    const updated = mailLogs.map(l => l.id === log.id ? { ...l, processingStatus: status, isNotified: status === 'notified' } : l);
-                    setMailLogs(updated);
-                    localStorage.setItem(LOG_KEY, JSON.stringify(updated));
-                  }}
-                  onUpdateMatch={(user) => {
-                    const updated = mailLogs.map(l => l.id === log.id ? { 
-                      ...l, 
-                      analysis: { ...l.analysis, matchedUser: { ...user, status: 'matched' as const } } 
-                    } : l);
-                    setMailLogs(updated);
-                    localStorage.setItem(LOG_KEY, JSON.stringify(updated));
-                  }}
+                  key={log.id} analysis={log.analysis} ocrText="" imageUrl={log.imageUrl} allCustomers={customers} isNotified={log.isNotified} currentStatus={log.processingStatus} isArchived={log.isArchived}
+                  onDelete={() => { const updated = mailLogs.filter(l => l.id !== log.id); handleUpdateLogs(updated); }}
+                  onMarkAsNotified={(status) => { const updated = mailLogs.map(l => l.id === log.id ? { ...l, processingStatus: status, isNotified: status === 'notified' } : l); handleUpdateLogs(updated); }}
+                  onUpdateMatch={(user) => { const updated = mailLogs.map(l => l.id === log.id ? { ...l, analysis: { ...l.analysis, matchedUser: { ...user, status: 'matched' as const } } } : l); handleUpdateLogs(updated); }}
                   onOpenDashboard={setGlobalSelectedCustomer}
                 />
               ))}
-              {pendingLogs.length === 0 && !isProcessing && (
-                <div className="py-24 text-center opacity-20 grayscale">
-                  <span className="text-8xl block mb-6">📭</span>
-                  <p className="font-black text-sm uppercase tracking-[0.5em]">目前暫無待處理項目</p>
-                </div>
-              )}
             </div>
           </div>
         )}
-
-        {activeTab === 'delivery' && (
-          <UnifiedTaskDashboard 
-            logs={mailLogs} 
-            onUpdateLogs={logs => { setMailLogs(logs); localStorage.setItem(LOG_KEY, JSON.stringify(logs)); }} 
-            onProcessMail={() => {}} 
-          />
-        )}
-
+        {activeTab === 'delivery' && <UnifiedTaskDashboard logs={mailLogs} onUpdateLogs={handleUpdateLogs} onProcessMail={() => {}} />}
         {activeTab === 'crm' && (
           <CustomerManagement 
-            customers={customers} 
-            logs={mailLogs} 
-            onUpdate={c => { setCustomers(c); localStorage.setItem(DB_KEY, JSON.stringify(c)); }} 
-            onProcessMail={(id, status) => {
-              const updated = mailLogs.map(l => l.id === id ? { ...l, processingStatus: status, isArchived: true } : l);
-              setMailLogs(updated);
-              localStorage.setItem(LOG_KEY, JSON.stringify(updated));
-            }} 
-            onDeleteCustomer={id => {
-              const updated = customers.filter(c => c.customerId !== id);
-              setCustomers(updated);
-              localStorage.setItem(DB_KEY, JSON.stringify(updated));
-            }} 
+            customers={customers} logs={mailLogs} onUpdate={handleUpdateCustomers} 
+            onProcessMail={(id, status) => { const updated = mailLogs.map(l => l.id === id ? { ...l, processingStatus: status, isArchived: true } : l); handleUpdateLogs(updated); }} 
+            onDeleteCustomer={id => { const updated = customers.filter(c => c.customerId !== id); handleUpdateCustomers(updated); }} 
           />
         )}
       </main>
@@ -289,7 +260,7 @@ const App: React.FC = () => {
         ].map((tab) => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex flex-col items-center px-8 py-4 rounded-[35px] transition-all duration-500 ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-2xl' : 'text-gray-400 hover:bg-gray-100'}`}>
             <span className="text-2xl mb-1.5">{tab.icon}</span>
-            <span className="text-[10px] font-black uppercase tracking-[0.2em]">{tab.label}</span>
+            <span className="text-[10px] font-black uppercase tracking-widest tracking-[0.2em]">{tab.label}</span>
           </button>
         ))}
       </nav>
@@ -297,24 +268,17 @@ const App: React.FC = () => {
       {globalSelectedCustomer && (
         <CustomerDashboard 
           customer={globalSelectedCustomer} logs={mailLogs} onClose={() => setGlobalSelectedCustomer(null)}
-          onUpdateCustomer={(c, oldId) => { 
-            const updated = customers.map(old => old.customerId === oldId ? c : old); 
-            setCustomers(updated); 
-            localStorage.setItem(DB_KEY, JSON.stringify(updated)); 
-            setGlobalSelectedCustomer(c);
-          }}
-          onDeleteCustomer={id => { const updated = customers.filter(c => c.customerId !== id); setCustomers(updated); localStorage.setItem(DB_KEY, JSON.stringify(updated)); setGlobalSelectedCustomer(null); }}
-          onProcessMail={(id, status) => { const updated = mailLogs.map(l => l.id === id ? { ...l, processingStatus: status, isArchived: true } : l); setMailLogs(updated); localStorage.setItem(LOG_KEY, JSON.stringify(updated)); }}
+          onUpdateCustomer={(c, oldId) => { const updated = customers.map(old => old.customerId === oldId ? c : old); handleUpdateCustomers(updated); setGlobalSelectedCustomer(c); }}
+          onDeleteCustomer={id => { const updated = customers.filter(c => c.customerId !== id); handleUpdateCustomers(updated); setGlobalSelectedCustomer(null); }}
+          onProcessMail={(id, status) => { const updated = mailLogs.map(l => l.id === id ? { ...l, processingStatus: status, isArchived: true } : l); handleUpdateLogs(updated); }}
         />
       )}
-
       {isManualNotifyOpen && <ManualNotificationModal customers={customers} onClose={() => setIsManualNotifyOpen(false)} />}
-      
       {isSystemSettingsOpen && (
         <SystemSettingsModal 
           customers={customers} mailLogs={mailLogs} scheduledMails={[]} currentVenue={currentVenue} viewMode="staff"
-          onRestore={handleSystemRestore}
-          onClose={() => setIsSystemSettingsOpen(false)}
+          templates={templates} onUpdateTemplates={handleUpdateTemplates}
+          onRestore={() => {}} onClose={() => setIsSystemSettingsOpen(false)}
         />
       )}
     </div>

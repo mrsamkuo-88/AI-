@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { MatchedUser, MailLogEntry, MailProcessingStatus } from '../types';
 
 interface CustomerDashboardProps {
@@ -8,11 +9,6 @@ interface CustomerDashboardProps {
   onDeleteCustomer: (customerId: string) => void;
   onProcessMail: (logId: string, status: MailProcessingStatus, isArchived?: boolean) => void;
   onClose: () => void;
-}
-
-interface LogActionState {
-  status: MailProcessingStatus;
-  customText: string;
 }
 
 const ADMIN_PASSWORD = 'mail5286';
@@ -30,6 +26,8 @@ const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
 }) => {
   const [editingCustomer, setEditingCustomer] = useState<MatchedUser>({ ...customer });
   const [isEditLocked, setIsEditLocked] = useState(true);
+  const [historyFilter, setHistoryFilter] = useState<'all' | 'processed' | 'unprocessed'>('all');
+  const [historySearch, setHistorySearch] = useState('');
   
   // Sync editing state if the prop changes (e.g. after save)
   useEffect(() => {
@@ -44,9 +42,39 @@ const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
   const isDeleting = showPwdModal === 'DELETE_CUSTOMER';
   const isUnlocking = showPwdModal === 'UNLOCK_EDIT';
 
-  const customerLogs = logs.filter(l => l.analysis.matchedUser?.customerId === customer.customerId);
-  const activeLogs = customerLogs.filter(l => !l.isArchived);
-  const historyLogs = customerLogs.filter(l => l.isArchived).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  const customerLogs = useMemo(() => 
+    logs.filter(l => l.analysis.matchedUser?.customerId === customer.customerId),
+    [logs, customer.customerId]
+  );
+
+  const activeLogs = useMemo(() => 
+    customerLogs.filter(l => !l.isArchived),
+    [customerLogs]
+  );
+  
+  const historyLogs = useMemo(() => 
+    customerLogs.filter(l => l.isArchived).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
+    [customerLogs]
+  );
+
+  // Filtered history list based on the new filters
+  const displayedHistory = useMemo(() => {
+    return customerLogs.filter(l => {
+      // Status Filter
+      if (historyFilter === 'processed' && !l.isArchived) return false;
+      if (historyFilter === 'unprocessed' && l.isArchived) return false;
+      
+      // Search Filter
+      if (historySearch) {
+        const q = historySearch.toLowerCase();
+        return (
+          (l.analysis.summary || '').toLowerCase().includes(q) ||
+          (l.analysis.senderName || '').toLowerCase().includes(q)
+        );
+      }
+      return true;
+    }).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [customerLogs, historyFilter, historySearch]);
 
   const now = new Date();
   const currentMonth = now.getMonth();
@@ -56,15 +84,14 @@ const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
   };
 
-  const monthlyLogs = [...activeLogs, ...historyLogs].filter(l => isThisMonth(l.timestamp));
+  const monthlyLogs = customerLogs.filter(l => isThisMonth(l.timestamp));
   const monthlyScanCount = monthlyLogs.filter(l => l.processingStatus === 'scanned').length;
   const monthlyScheduledCount = monthlyLogs.filter(l => l.processingStatus === 'scheduled').length;
 
   const extraScans = Math.max(0, monthlyScanCount - (customer.freeScans || 0));
   const extraDeliveries = Math.max(0, monthlyScheduledCount - (customer.freeDeliveries || 0));
   const currentMonthFees = (extraScans * (customer.scanFee || 0)) + (extraDeliveries * (customer.deliveryFee || 0));
-  const totalDisplayFees = (customer.unpaidFees || 0) + currentMonthFees;
-
+  
   const stats = {
     scanned: monthlyScanCount,
     scheduled: monthlyScheduledCount,
@@ -228,7 +255,6 @@ const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
         <div className="flex-1 overflow-hidden flex flex-col lg:flex-row relative">
           {isEditLocked && (
             <div className="absolute top-4 right-8 z-20 flex flex-col items-end gap-2">
-               <p className="bg-white/90 backdrop-blur px-4 py-2 rounded-2xl text-[11px] font-black text-indigo-600 shadow-xl border border-indigo-100 animate-bounce">這個頁面要編輯客戶資訊都需要輸入密碼，否則只能以預覽模式進行</p>
                <button onClick={() => setShowPwdModal('UNLOCK_EDIT')} className="bg-indigo-600 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all flex items-center gap-2"><span>🔓</span> 解鎖編輯</button>
             </div>
           )}
@@ -385,7 +411,7 @@ const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                 <h3 className="text-xl font-black text-gray-800 tracking-tight">當前庫存項目 ({activeLogs.length})</h3>
               </div>
               {activeLogs.length === 0 ? (
-                <div className="py-24 text-center bg-white/50 rounded-[40px] border-2 border-dashed border-gray-100 opacity-30">
+                <div className="py-12 text-center bg-white/50 rounded-[40px] border-2 border-dashed border-gray-100 opacity-30">
                   <p className="font-black text-xs uppercase tracking-[0.2em] text-gray-400">目前暫無待處分項目</p>
                 </div>
               ) : (
@@ -404,17 +430,74 @@ const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
             </section>
 
             <section ref={historyRef} className="space-y-6 pt-10 border-t border-gray-200">
-              <h3 className="text-xl font-black text-gray-800 tracking-tight">歷史紀錄 ({historyLogs.length})</h3>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="flex items-center space-x-3">
+                    <div className="w-1.5 h-6 bg-gray-400 rounded-full"></div>
+                    <h3 className="text-xl font-black text-gray-800 tracking-tight">歷史紀錄中心 ({displayedHistory.length})</h3>
+                </div>
+                
+                {/* 篩選控制器 */}
+                <div className="flex bg-white p-1 rounded-2xl border border-gray-100 shadow-sm">
+                  {[
+                    { id: 'all', label: '全部', icon: '📁' },
+                    { id: 'processed', label: '已處理', icon: '✅' },
+                    { id: 'unprocessed', label: '未處理', icon: '⏳' }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setHistoryFilter(tab.id as any)}
+                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${historyFilter === tab.id ? 'bg-[#3D48B8] text-white shadow-md' : 'text-gray-400 hover:bg-gray-50'}`}
+                    >
+                      <span>{tab.icon}</span>
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 搜尋欄位 */}
+              <div className="bg-white px-6 py-4 rounded-3xl border border-gray-100 shadow-sm flex items-center space-x-4">
+                <span className="text-xl">🔍</span>
+                <input 
+                  className="flex-1 bg-transparent border-none outline-none font-bold text-sm text-gray-700 placeholder-gray-300"
+                  placeholder="搜尋歷史訊息內容或寄件人..."
+                  value={historySearch}
+                  onChange={e => setHistorySearch(e.target.value)}
+                />
+              </div>
+
               <div className="space-y-3">
-                {historyLogs.map(log => (
-                  <div key={log.id} className="bg-white rounded-[40px] p-5 border border-gray-100 flex items-center space-x-4 shadow-sm hover:border-indigo-100 transition-all">
-                    <div className="w-10 h-10 rounded-full bg-gray-400 flex items-center justify-center text-white text-xs">📜</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[11px] font-black text-gray-400 uppercase tracking-tighter">{new Date(log.timestamp).toLocaleDateString()} {new Date(log.timestamp).toLocaleTimeString()}</p>
-                      <p className="text-sm font-bold text-gray-700 truncate">{log.analysis.summary}</p>
+                {displayedHistory.map(log => (
+                  <div key={log.id} className={`bg-white rounded-[40px] p-6 border transition-all flex flex-col md:flex-row items-center gap-6 shadow-sm hover:shadow-md ${log.isArchived ? 'border-gray-100' : 'border-indigo-100 bg-indigo-50/10'}`}>
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl shadow-inner ${log.isArchived ? 'bg-gray-50 text-gray-400' : 'bg-indigo-600 text-white'}`}>
+                        {log.isArchived ? '✅' : '⏳'}
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">
+                            {new Date(log.timestamp).toLocaleDateString()} {new Date(log.timestamp).toLocaleTimeString()}
+                        </span>
+                        {!log.isArchived && <span className="bg-indigo-600 text-white px-2 py-0.5 rounded text-[8px] font-black uppercase">Active</span>}
+                        {log.processingStatus && (
+                            <span className="bg-gray-100 text-gray-400 px-2 py-0.5 rounded text-[8px] font-black uppercase">{log.processingStatus}</span>
+                        )}
+                      </div>
+                      <p className="text-sm font-bold text-gray-700 mb-1">{log.analysis.summary}</p>
+                      <p className="text-[10px] text-gray-400 font-medium italic">寄件者: {log.analysis.senderName || '未知'}</p>
+                    </div>
+                    {log.imageUrl && (
+                        <div className="w-16 h-16 rounded-xl overflow-hidden border-2 border-white shadow-sm flex-shrink-0">
+                            <img src={log.imageUrl} className="w-full h-full object-cover" />
+                        </div>
+                    )}
                   </div>
                 ))}
+                {displayedHistory.length === 0 && (
+                  <div className="py-32 text-center bg-white rounded-[40px] border-2 border-dashed border-gray-100 opacity-20">
+                     <span className="text-6xl block mb-4">🗄️</span>
+                     <p className="font-black text-sm uppercase tracking-[0.5em]">在此篩選條件下無任何紀錄</p>
+                  </div>
+                )}
               </div>
             </section>
           </div>
